@@ -1,0 +1,50 @@
+trips:
+  chicago_sao_paulo_jul2026:
+    name: "Chicago → São Paulo July 2026"
+    origin: "ORD"
+    final_destination: "GRU"
+
+    stopovers:
+      candidates: ["ADZ", "CTG", "AUA"]
+      min_days: 2
+      max_days: 4
+
+    domestic_leg:
+      origin: "GRU"
+      destinations: ["NVT", "JOI", "CWB"]
+      airlines: ["LATAM", "GOL", "AZUL"]
+
+    travel_window:
+      earliest_depart: "2026-07-26"
+      latest_depart: "2026-08-02"
+      return_by: "2026-08-10"
+
+    points_balances:
+      amex_mr: 180000
+      lifemiles: 45000
+      c6_atomos: 0
+
+    cpp_valuations:
+      lifemiles: 1.4
+      aeroplan: 1.8
+      united_mp: 1.2
+      flying_blue: 1.5
+      smiles: 1.3
+      latam_pass: 1.2
+      tudoazul: 1.1
+
+    scoring_weights:
+      total_cost: 0.5
+      total_time: 0.3
+      connection_quality: 0.2
+
+    constraints:
+      gru_min_connection_hours: 3
+      max_total_travel_hours: 36
+      flag_gru_cgr_mismatch: true
+      baggage_checked_bags: 1
+
+    notify:
+      email: ""
+      send_time: "07:00"
+      only_if_change: false
