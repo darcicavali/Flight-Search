@@ -2,5 +2,415 @@
   {
     "date": "2026-04-19",
     "combos": []
+  },
+  {
+    "date": "2026-04-19",
+    "combos": [
+      {
+        "combo_id": "ORD-GRU-2026-07-27|GRU-CWB-2026-07-28",
+        "route": "ORD \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 446.45,
+        "best_points_option": null,
+        "total_travel_hours": 12.87,
+        "verdict": "CASH WINS",
+        "rank": 1
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-27|GRU-JOI-2026-07-28",
+        "route": "ORD \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 447.74,
+        "best_points_option": null,
+        "total_travel_hours": 12.92,
+        "verdict": "CASH WINS",
+        "rank": 2
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-27|GRU-NVT-2026-07-28",
+        "route": "ORD \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 449.16,
+        "best_points_option": null,
+        "total_travel_hours": 12.99,
+        "verdict": "CASH WINS",
+        "rank": 3
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-26|GRU-CWB-2026-07-27",
+        "route": "ORD \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 451.5,
+        "best_points_option": null,
+        "total_travel_hours": 12.87,
+        "verdict": "CASH WINS",
+        "rank": 4
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-26|GRU-JOI-2026-07-27",
+        "route": "ORD \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 452.94,
+        "best_points_option": null,
+        "total_travel_hours": 12.92,
+        "verdict": "CASH WINS",
+        "rank": 5
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-26|GRU-NVT-2026-07-27",
+        "route": "ORD \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 454.28,
+        "best_points_option": null,
+        "total_travel_hours": 12.99,
+        "verdict": "CASH WINS",
+        "rank": 6
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-27|GRU-CWB-2026-07-29",
+        "route": "ORD \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 446.5,
+        "best_points_option": null,
+        "total_travel_hours": 12.87,
+        "verdict": "CASH WINS",
+        "rank": 7
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-27|GRU-JOI-2026-07-29",
+        "route": "ORD \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 447.84,
+        "best_points_option": null,
+        "total_travel_hours": 12.92,
+        "verdict": "CASH WINS",
+        "rank": 8
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-27|GRU-NVT-2026-07-29",
+        "route": "ORD \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 449.39,
+        "best_points_option": null,
+        "total_travel_hours": 12.99,
+        "verdict": "CASH WINS",
+        "rank": 9
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-26|GRU-CWB-2026-07-28",
+        "route": "ORD \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 451.56,
+        "best_points_option": null,
+        "total_travel_hours": 12.87,
+        "verdict": "CASH WINS",
+        "rank": 10
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-26|GRU-JOI-2026-07-28",
+        "route": "ORD \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 452.85,
+        "best_points_option": null,
+        "total_travel_hours": 12.92,
+        "verdict": "CASH WINS",
+        "rank": 11
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-26|GRU-NVT-2026-07-28",
+        "route": "ORD \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 454.27,
+        "best_points_option": null,
+        "total_travel_hours": 12.99,
+        "verdict": "CASH WINS",
+        "rank": 12
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-29|GRU-CWB-2026-07-30",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 511.49,
+        "best_points_option": null,
+        "total_travel_hours": 13.47,
+        "verdict": "CASH WINS",
+        "rank": 13
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-28|GRU-CWB-2026-07-29",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 514.18,
+        "best_points_option": null,
+        "total_travel_hours": 13.47,
+        "verdict": "CASH WINS",
+        "rank": 14
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-29|GRU-JOI-2026-07-30",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 513.56,
+        "best_points_option": null,
+        "total_travel_hours": 13.52,
+        "verdict": "CASH WINS",
+        "rank": 15
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-29|GRU-NVT-2026-07-30",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 514.33,
+        "best_points_option": null,
+        "total_travel_hours": 13.59,
+        "verdict": "CASH WINS",
+        "rank": 16
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-28|GRU-JOI-2026-07-29",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 515.52,
+        "best_points_option": null,
+        "total_travel_hours": 13.52,
+        "verdict": "CASH WINS",
+        "rank": 17
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-30|GRU-CWB-2026-07-31",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 518.76,
+        "best_points_option": null,
+        "total_travel_hours": 13.47,
+        "verdict": "CASH WINS",
+        "rank": 18
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-28|GRU-NVT-2026-07-29",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 517.07,
+        "best_points_option": null,
+        "total_travel_hours": 13.59,
+        "verdict": "CASH WINS",
+        "rank": 19
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-30|GRU-JOI-2026-07-31",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 520.03,
+        "best_points_option": null,
+        "total_travel_hours": 13.52,
+        "verdict": "CASH WINS",
+        "rank": 20
+      },
+      {
+        "combo_id": "ORD-AUA-2026-07-26|AUA-GRU-2026-07-30|GRU-NVT-2026-07-31",
+        "route": "ORD \u2192 AUA \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 521.77,
+        "best_points_option": null,
+        "total_travel_hours": 13.59,
+        "verdict": "CASH WINS",
+        "rank": 21
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-29|GRU-CWB-2026-07-30",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 498.79,
+        "best_points_option": null,
+        "total_travel_hours": 15.51,
+        "verdict": "CASH WINS",
+        "rank": 22
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-29|GRU-JOI-2026-07-30",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 500.86,
+        "best_points_option": null,
+        "total_travel_hours": 15.56,
+        "verdict": "CASH WINS",
+        "rank": 23
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-29|GRU-NVT-2026-07-30",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 501.63,
+        "best_points_option": null,
+        "total_travel_hours": 15.63,
+        "verdict": "CASH WINS",
+        "rank": 24
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-27|ADZ-GRU-2026-07-30|GRU-CWB-2026-07-31",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 526.7,
+        "best_points_option": null,
+        "total_travel_hours": 14.02,
+        "verdict": "CASH WINS",
+        "rank": 25
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-27|ADZ-GRU-2026-07-30|GRU-JOI-2026-07-31",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 527.97,
+        "best_points_option": null,
+        "total_travel_hours": 14.07,
+        "verdict": "CASH WINS",
+        "rank": 26
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-30|GRU-CWB-2026-07-31",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 530.22,
+        "best_points_option": null,
+        "total_travel_hours": 14.02,
+        "verdict": "CASH WINS",
+        "rank": 27
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-27|ADZ-GRU-2026-07-30|GRU-NVT-2026-07-31",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 529.71,
+        "best_points_option": null,
+        "total_travel_hours": 14.14,
+        "verdict": "CASH WINS",
+        "rank": 28
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-30|GRU-JOI-2026-07-31",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 531.49,
+        "best_points_option": null,
+        "total_travel_hours": 14.07,
+        "verdict": "CASH WINS",
+        "rank": 29
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-28|GRU-CWB-2026-07-29",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 509.9,
+        "best_points_option": null,
+        "total_travel_hours": 15.51,
+        "verdict": "CASH WINS",
+        "rank": 30
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-30|GRU-CWB-2026-07-31",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 509.97,
+        "best_points_option": null,
+        "total_travel_hours": 15.51,
+        "verdict": "CASH WINS",
+        "rank": 31
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-28|GRU-JOI-2026-07-29",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 511.24,
+        "best_points_option": null,
+        "total_travel_hours": 15.56,
+        "verdict": "CASH WINS",
+        "rank": 32
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-30|GRU-JOI-2026-07-31",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 511.24,
+        "best_points_option": null,
+        "total_travel_hours": 15.56,
+        "verdict": "CASH WINS",
+        "rank": 33
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-30|GRU-NVT-2026-07-31",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 533.23,
+        "best_points_option": null,
+        "total_travel_hours": 14.14,
+        "verdict": "CASH WINS",
+        "rank": 34
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-27|ADZ-GRU-2026-07-29|GRU-CWB-2026-07-30",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 536.62,
+        "best_points_option": null,
+        "total_travel_hours": 14.02,
+        "verdict": "CASH WINS",
+        "rank": 35
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-28|GRU-NVT-2026-07-29",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 512.79,
+        "best_points_option": null,
+        "total_travel_hours": 15.63,
+        "verdict": "CASH WINS",
+        "rank": 36
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-30|GRU-NVT-2026-07-31",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 512.98,
+        "best_points_option": null,
+        "total_travel_hours": 15.63,
+        "verdict": "CASH WINS",
+        "rank": 37
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-27|ADZ-GRU-2026-07-29|GRU-JOI-2026-07-30",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 538.69,
+        "best_points_option": null,
+        "total_travel_hours": 14.07,
+        "verdict": "CASH WINS",
+        "rank": 38
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-29|GRU-CWB-2026-07-30",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 540.14,
+        "best_points_option": null,
+        "total_travel_hours": 14.02,
+        "verdict": "CASH WINS",
+        "rank": 39
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-27|ADZ-GRU-2026-07-29|GRU-NVT-2026-07-30",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 539.46,
+        "best_points_option": null,
+        "total_travel_hours": 14.14,
+        "verdict": "CASH WINS",
+        "rank": 40
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-29|GRU-JOI-2026-07-30",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 542.21,
+        "best_points_option": null,
+        "total_travel_hours": 14.07,
+        "verdict": "CASH WINS",
+        "rank": 41
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-28|GRU-CWB-2026-07-29",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 CWB",
+        "total_cash_usd": 543.54,
+        "best_points_option": null,
+        "total_travel_hours": 14.02,
+        "verdict": "CASH WINS",
+        "rank": 42
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-29|GRU-NVT-2026-07-30",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 542.98,
+        "best_points_option": null,
+        "total_travel_hours": 14.14,
+        "verdict": "CASH WINS",
+        "rank": 43
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-28|GRU-JOI-2026-07-29",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 JOI",
+        "total_cash_usd": 544.88,
+        "best_points_option": null,
+        "total_travel_hours": 14.07,
+        "verdict": "CASH WINS",
+        "rank": 44
+      },
+      {
+        "combo_id": "ORD-ADZ-2026-07-26|ADZ-GRU-2026-07-28|GRU-NVT-2026-07-29",
+        "route": "ORD \u2192 ADZ \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 546.43,
+        "best_points_option": null,
+        "total_travel_hours": 14.14,
+        "verdict": "CASH WINS",
+        "rank": 45
+      }
+    ]
   }
 ]
