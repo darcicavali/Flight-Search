@@ -6,8 +6,12 @@ Auth: Bearer token + Duffel-Version header.
 Duffel is a two-step API (create offer request → get offers) but setting
 `return_offers=true` collapses it into a single call that returns the top offers
 inline.
+
+Rate limiting: Duffel test env caps at a few requests/sec. We serialize to 2
+concurrent and retry HTTP 429 responses with exponential backoff.
 """
 
+import asyncio
 import logging
 from typing import Dict, List, Optional
 
@@ -21,6 +25,9 @@ log = logging.getLogger(__name__)
 DUFFEL_API = "https://api.duffel.com"
 DUFFEL_OFFER_REQUESTS = f"{DUFFEL_API}/air/offer_requests"
 DUFFEL_VERSION = "v2"
+
+RATE_LIMIT_RETRIES = 4
+RATE_LIMIT_BACKOFF_SECONDS = [2, 4, 8, 16]
 
 
 def _duration_iso_to_hours(iso: Optional[str]) -> Optional[float]:
@@ -82,20 +89,35 @@ async def _fetch_one(
         "Accept": "application/json",
     }
 
-    try:
-        async with session.post(
-            f"{DUFFEL_OFFER_REQUESTS}?return_offers=true&sort=total_amount",
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=45),
-        ) as r:
-            if r.status not in (200, 201):
-                body = await r.text()
-                result["error"] = f"duffel http {r.status}: {body[:200]}"
-                return result
-            body = await r.json()
-    except Exception as e:
-        result["error"] = f"duffel exception: {e}"
+    body = None
+    last_error = None
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            async with session.post(
+                f"{DUFFEL_OFFER_REQUESTS}?return_offers=true&sort=total_amount",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=45),
+            ) as r:
+                if r.status == 429 and attempt < RATE_LIMIT_RETRIES:
+                    retry_after = RATE_LIMIT_BACKOFF_SECONDS[attempt]
+                    header_val = r.headers.get("Retry-After")
+                    if header_val and header_val.isdigit():
+                        retry_after = max(retry_after, int(header_val))
+                    await asyncio.sleep(retry_after)
+                    continue
+                if r.status not in (200, 201):
+                    body_text = await r.text()
+                    last_error = f"duffel http {r.status}: {body_text[:200]}"
+                    break
+                body = await r.json()
+                break
+        except Exception as e:
+            last_error = f"duffel exception: {e}"
+            break
+
+    if body is None:
+        result["error"] = last_error or "duffel failed after retries"
         return result
 
     offers = ((body.get("data") or {}).get("offers")) or []
@@ -142,7 +164,8 @@ async def fetch_cash_fares(
     try:
         rates = await get_rates(session)
         coros = [_fetch_one(session, leg, token, rates) for leg in legs]
-        results = await gather_limited(3, coros)
+        # Lower concurrency (2) — stay under Duffel test-env rate limits.
+        results = await gather_limited(2, coros)
     finally:
         if own_session:
             await session.close()
