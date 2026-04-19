@@ -169,17 +169,18 @@ async def fetch_cash_fares(
     return out
 
 
-def merge_cash(primary: Dict[str, dict], secondary: Dict[str, dict]) -> Dict[str, dict]:
-    """Pick lower-price offer per leg between Kiwi and Amadeus."""
+def merge_cash(*sources: Dict[str, dict]) -> Dict[str, dict]:
+    """Pick the lowest-price offer per leg across any number of cash sources."""
     out: Dict[str, dict] = {}
-    keys = set(primary) | set(secondary)
-    for k in keys:
-        a = primary.get(k)
-        b = secondary.get(k)
-        if a and a.get("price_usd") and (not b or not b.get("price_usd") or a["price_usd"] <= b["price_usd"]):
-            out[k] = a
-        elif b and b.get("price_usd"):
-            out[k] = b
+    all_keys: set = set()
+    for s in sources:
+        if s:
+            all_keys.update(s.keys())
+    for k in all_keys:
+        candidates = [s[k] for s in sources if s and k in s]
+        priced = [c for c in candidates if c and c.get("price_usd") is not None]
+        if priced:
+            out[k] = min(priced, key=lambda c: c["price_usd"])
         else:
-            out[k] = a or b
+            out[k] = candidates[0] if candidates else None
     return out

@@ -33,12 +33,16 @@ main.py                  # async orchestrator
 
 | Source       | Purpose                              | Cost        |
 | ------------ | ------------------------------------ | ----------- |
-| Kiwi Tequila | Primary cash fares (LCC coverage)    | Free        |
-| Amadeus      | Secondary cash fares (legacy gap)    | Free tier   |
+| Kiwi Tequila | LCC cash fares (affiliate-only now)  | Free tier (if granted) |
+| Amadeus      | Legacy carrier cash fares            | Free tier   |
+| Duffel       | LCC + legacy cash fares (NDC)        | Free test env |
 | Seats.aero   | International award availability     | ~$10/mo     |
 | Smiles       | Brazilian domestic awards (GOL)      | Free (anon) |
 | SendGrid     | Email delivery                       | Free tier   |
 | Google Sheets| Price history                        | Free        |
+
+Kiwi's Tequila API is affiliate-gated as of late 2025 — if you have a key set it;
+otherwise Amadeus + Duffel together cover the cash-fare layer.
 
 See `config/trips.yaml` for how to configure a trip.
 

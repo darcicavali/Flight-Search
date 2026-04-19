@@ -21,6 +21,7 @@ from engine.routes import Combo, deduplicate_legs, enumerate_routes
 from engine.scorer import all_legs_found, score_combo
 from fetchers.amadeus import fetch_cash_fares as fetch_amadeus
 from fetchers.amadeus import merge_cash
+from fetchers.duffel import fetch_cash_fares as fetch_duffel
 from fetchers.kiwi import fetch_cash_fares as fetch_kiwi
 from fetchers.seats_aero import fetch_award_fares
 from fetchers.smiles import fetch_smiles_domestic
@@ -73,13 +74,14 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
     log.info("Fetching fares for %d unique legs", len(unique_legs))
 
     async with aiohttp.ClientSession() as session:
-        kiwi_data, amadeus_data, award_data, domestic_award_data = await asyncio.gather(
+        kiwi_data, amadeus_data, duffel_data, award_data, domestic_award_data = await asyncio.gather(
             fetch_kiwi(unique_legs, config, session=session),
             fetch_amadeus(unique_legs, config, session=session),
+            fetch_duffel(unique_legs, config, session=session),
             fetch_award_fares(unique_legs, config, session=session),
             fetch_smiles_domestic(unique_legs, config, session=session),
         )
-    cash_data = merge_cash(kiwi_data, amadeus_data)
+    cash_data = merge_cash(kiwi_data, amadeus_data, duffel_data)
 
     scored = []
     skipped = 0
