@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from datetime import date
 from typing import Dict, List
@@ -105,7 +106,11 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
     if dry_run:
         print(digest)
     else:
-        recipient = config.get("notify", {}).get("email") or ""
+        recipient = (
+            os.environ.get("RECIPIENT_EMAIL")
+            or config.get("notify", {}).get("email")
+            or ""
+        )
         sent = send_email(digest, recipient)
         if not sent:
             print("\n[email not sent — falling back to stdout]\n")
