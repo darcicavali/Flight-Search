@@ -36,6 +36,30 @@ logging.basicConfig(
 log = logging.getLogger("main")
 
 
+def _log_fetcher_summary(name: str, data: Dict[str, dict], is_award: bool = False) -> None:
+    """Log per-fetcher success/failure counts plus a few sample errors."""
+    if not data:
+        log.info("[%s] no data returned", name)
+        return
+    total = len(data)
+    if is_award:
+        ok = sum(1 for v in data.values() if v and (v.get("awards") or {}))
+        metric = "legs with award space"
+    else:
+        ok = sum(1 for v in data.values() if v and v.get("price_usd") is not None)
+        metric = "legs priced"
+    errors: List[str] = []
+    for leg_key, v in data.items():
+        if not v:
+            continue
+        err = v.get("error")
+        if err and len(errors) < 3:
+            errors.append(f"{leg_key}: {err}")
+    log.info("[%s] %d/%d %s", name, ok, total, metric)
+    for e in errors:
+        log.info("[%s] sample error → %s", name, e)
+
+
 def _assemble_legs(
     combo: Combo,
     cash_data: Dict[str, dict],
@@ -82,7 +106,17 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
             fetch_award_fares(unique_legs, config, session=session),
             fetch_smiles_domestic(unique_legs, config, session=session),
         )
+
+    _log_fetcher_summary("kiwi", kiwi_data)
+    _log_fetcher_summary("amadeus", amadeus_data)
+    _log_fetcher_summary("duffel", duffel_data)
+    _log_fetcher_summary("seats_aero", award_data, is_award=True)
+    _log_fetcher_summary("smiles", domestic_award_data, is_award=True)
+
     cash_data = merge_cash(kiwi_data, amadeus_data, duffel_data)
+    priced = sum(1 for v in cash_data.values() if v and v.get("price_usd") is not None)
+    log.info("Merged cash coverage: %d/%d legs priced across all sources",
+             priced, len(cash_data))
 
     scored = []
     skipped = 0
@@ -117,8 +151,10 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
             print(digest)
 
     append_to_sheets(scored, config)
-    log.info("Done.")
-    return 0 if scored else 2
+    log.info("Done. (%d combos ranked)", len(scored))
+    # Exit 0 even with zero scored combos — the digest was produced/delivered.
+    # Empty results are a data-coverage signal, not a pipeline failure.
+    return 0
 
 
 def main():
