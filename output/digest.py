@@ -6,6 +6,7 @@ from datetime import date
 from typing import List, Optional
 
 from engine.scorer import ScoredCombo
+from output.award_links import build_award_links
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +81,42 @@ def _format_rank_row(rank: int, sc: ScoredCombo) -> str:
     )
 
 
+def _format_manual_award_check(
+    ranked: List[ScoredCombo], cpp_valuations: dict, top_n_combos: int = 3
+) -> str:
+    """For the top N combos, list each unique leg with deep links to every
+    relevant program's award search page. Deduplicated by (origin, dest, date).
+    """
+    seen = set()
+    sections: List[str] = []
+
+    for sc in ranked[:top_n_combos]:
+        for leg in sc.legs_data:
+            key = (leg["origin"], leg["destination"], leg["date"])
+            if key in seen:
+                continue
+            seen.add(key)
+
+            # Skip legs where the fetcher already returned award data — no need
+            # to ask the user to check manually.
+            if (leg.get("awards") or {}):
+                continue
+
+            links = build_award_links(
+                leg["origin"], leg["destination"], leg["date"], cpp_valuations
+            )
+            if not links:
+                continue
+
+            header = f"  {leg['origin']} → {leg['destination']}  {leg['date']}"
+            body = "\n".join(f"    • {l.label}: {l.url}" for l in links)
+            sections.append(f"{header}\n{body}")
+
+    if not sections:
+        return "  (all legs have automated award data)"
+    return "\n\n".join(sections)
+
+
 def _format_award_alerts(ranked: List[ScoredCombo]) -> str:
     lines = []
     seen_programs = set()
@@ -135,6 +172,9 @@ def format_digest(
         _format_rank_row(i + 1, c) for i, c in enumerate(ranked_combos[:10])
     )
 
+    cpp = trip_config.get("cpp_valuations", {})
+    manual_check = _format_manual_award_check(ranked_combos, cpp)
+
     return (
         f"{header}\n"
         "🥇 BEST CASH COMBO\n"
@@ -149,6 +189,9 @@ def format_digest(
         "──────────────────────────────────────────────────────────────\n"
         "AWARD SPACE ALERTS\n"
         f"{_format_award_alerts(ranked_combos)}\n"
+        "──────────────────────────────────────────────────────────────\n"
+        "MANUAL AWARD CHECK (click each link, scan for availability)\n"
+        f"{manual_check}\n"
         "═══════════════════════════════════════════════════════════════\n"
     )
 
