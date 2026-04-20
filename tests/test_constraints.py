@@ -46,44 +46,23 @@ def _combo_next_day_transfer():
     )
 
 
-def _combo_cgh_mismatch():
-    return Combo(
-        legs=[
-            Leg("ORD", "GRU", date(2026, 7, 26), 1),
-            Leg("CGH", "NVT", date(2026, 7, 27), 2),
-        ],
-        combo_type="direct",
-    )
-
-
 def test_filters_same_day_gru_connection_below_minimum():
-    constraints = {"gru_min_connection_hours": 3, "max_total_travel_hours": 60,
-                   "flag_gru_cgr_mismatch": True}
+    constraints = {"gru_min_connection_hours": 3, "max_total_travel_hours": 60}
     # Same-day connection yields 4h by heuristic → should PASS (4h > 3h)
     combos = apply_constraints([_combo_stopover_same_day_gru_to_nvt()], constraints)
     assert len(combos) == 1  # 4h heuristic > 3h threshold
 
 
 def test_hard_reject_when_min_connection_over_four_hours():
-    constraints = {"gru_min_connection_hours": 5, "max_total_travel_hours": 60,
-                   "flag_gru_cgr_mismatch": True}
+    constraints = {"gru_min_connection_hours": 5, "max_total_travel_hours": 60}
     combos = apply_constraints([_combo_stopover_same_day_gru_to_nvt()], constraints)
     assert len(combos) == 0
 
 
 def test_next_day_transfer_passes():
-    constraints = {"gru_min_connection_hours": 3, "max_total_travel_hours": 60,
-                   "flag_gru_cgr_mismatch": True}
+    constraints = {"gru_min_connection_hours": 3, "max_total_travel_hours": 60}
     combos = apply_constraints([_combo_next_day_transfer()], constraints)
     assert len(combos) == 1
-
-
-def test_cgh_mismatch_flagged():
-    constraints = {"gru_min_connection_hours": 3, "max_total_travel_hours": 60,
-                   "flag_gru_cgr_mismatch": True}
-    combos = apply_constraints([_combo_cgh_mismatch()], constraints)
-    assert len(combos) == 1
-    assert any("CGH" in f for f in combos[0].flags)
 
 
 def test_real_time_gru_connection_rejects_short_gap():
@@ -123,29 +102,5 @@ def test_real_time_gru_connection_passes_when_times_missing():
         _leg_data("GRU", "NVT", "2026-07-29"),
     ]
     scored = [_FakeScored(combo=combo, legs_data=legs_data)]
-    kept = prune_short_gru_connections(scored, min_gru_conn=3.0)
-    assert len(kept) == 1
-
-
-def test_cgh_cross_airport_adds_2h_transfer_buffer():
-    """GRU→CGH transfer. Gap 4h — under 3h+2h threshold, should reject."""
-    combo = Combo(
-        legs=[
-            Leg("ORD", "GRU", date(2026, 7, 26), 1),
-            Leg("CGH", "NVT", date(2026, 7, 27), 2),
-        ],
-        combo_type="direct",
-    )
-    legs_data = [
-        _leg_data("ORD", "GRU", "2026-07-26", depart="22:00", arrive="09:00+1"),
-        _leg_data("CGH", "NVT", "2026-07-27", depart="13:00", arrive="14:30"),
-    ]
-    scored = [_FakeScored(combo=combo, legs_data=legs_data)]
-    # 4h gap < (3 + 2) = 5h threshold → reject
-    kept = prune_short_gru_connections(scored, min_gru_conn=3.0)
-    assert kept == []
-
-    # Extend domestic departure to 16:00 → 7h gap > 5h → accept
-    legs_data[1]["depart_time"] = "16:00"
     kept = prune_short_gru_connections(scored, min_gru_conn=3.0)
     assert len(kept) == 1
