@@ -49,9 +49,14 @@ def empty_leg_result(origin: str, destination: str, iso_date: str) -> dict:
         "date": iso_date,
         "price_usd": None,
         "airline": None,
+        "airline_name": None,
         "duration_hours": None,
         "duration_str": None,
         "stops": None,
+        "segments": [],            # [{carrier, flight_no, origin, destination, depart, arrive}]
+        "layovers": [],            # ["LIM 2h15m"]
+        "depart_time": None,       # "HH:MM"
+        "arrive_time": None,       # "HH:MM" (plus "+1" suffix if next-day)
         "booking_url": None,
         "awards": {},
         "source": None,

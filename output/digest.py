@@ -6,6 +6,7 @@ from datetime import date
 from typing import List, Optional
 
 from engine.scorer import ScoredCombo
+from output.airlines import airline_name
 from output.award_links import build_award_links
 
 log = logging.getLogger(__name__)
@@ -21,17 +22,41 @@ def _delta_str(current: float, prev: Optional[float]) -> str:
     return f"  {arrow}${abs(diff):.0f} vs yesterday"
 
 
+def _format_leg(i: int, l: dict) -> str:
+    price = l.get("price_usd")
+    price_s = f"${price:.0f}" if price else "—"
+    carrier = airline_name(l.get("airline") or "") or "airline?"
+    duration = l.get("duration_str") or ""
+
+    timing = ""
+    dep = l.get("depart_time")
+    arr = l.get("arrive_time")
+    if dep and arr:
+        timing = f"  {dep}→{arr}"
+
+    stops = l.get("stops")
+    layovers = l.get("layovers") or []
+    if stops and stops > 0:
+        if layovers:
+            stops_str = f"  via {', '.join(layovers)}"
+        else:
+            stops_str = f"  ({stops} stop{'s' if stops > 1 else ''})"
+    else:
+        stops_str = "  nonstop" if stops == 0 else ""
+
+    flight_nos = ""
+    segs = l.get("segments") or []
+    if segs and all(s.get("flight_no") and s.get("carrier") for s in segs):
+        flight_nos = "  [" + ", ".join(f"{s['carrier']}{s['flight_no']}" for s in segs) + "]"
+
+    header = (f"   Leg {i+1}: {l['origin']} → {l['destination']}  {l['date']}"
+              f"{timing}  {price_s}  {duration}")
+    detail = f"          {carrier}{stops_str}{flight_nos}"
+    return header + "\n" + detail
+
+
 def _format_combo_block(sc: ScoredCombo, prev_day_data: Optional[dict] = None) -> str:
-    legs_str_lines = []
-    for i, l in enumerate(sc.legs_data):
-        price = l.get("price_usd")
-        price_s = f"${price:.0f}" if price else "—"
-        legs_str_lines.append(
-            f"   Leg {i+1}: {l['origin']} → {l['destination']}  "
-            f"{l['date']}  {l.get('airline') or ''}  "
-            f"{price_s}  {l.get('duration_str') or ''}"
-        )
-    legs_str = "\n".join(legs_str_lines)
+    legs_str = "\n".join(_format_leg(i, l) for i, l in enumerate(sc.legs_data))
 
     points_str = ""
     if sc.best_points_option:
@@ -148,6 +173,18 @@ def format_digest(
     top_points = next((c for c in ranked_combos if "POINTS" in c.verdict), None)
     top_direct = next((c for c in ranked_combos if c.combo.combo_type == "direct"), None)
 
+    # Best combo per stopover city — cheapest combo that routes through each
+    # candidate Caribbean city, regardless of whether it tops the overall list.
+    stopover_candidates = (trip_config.get("stopovers") or {}).get("candidates") or []
+    best_per_stopover = {}
+    for city in stopover_candidates:
+        best = next(
+            (c for c in ranked_combos if c.combo.stopover_city == city),
+            None,
+        )
+        if best:
+            best_per_stopover[city] = best
+
     window = trip_config["travel_window"]
     header = (
         "═══════════════════════════════════════════════════════════════\n"
@@ -175,6 +212,22 @@ def format_digest(
     cpp = trip_config.get("cpp_valuations", {})
     manual_check = _format_manual_award_check(ranked_combos, cpp)
 
+    if best_per_stopover:
+        stopover_sections = []
+        for city in stopover_candidates:
+            if city in best_per_stopover:
+                stopover_sections.append(
+                    f"▸ Best via {city}:\n"
+                    f"{_format_combo_block(best_per_stopover[city], prev_day_data)}"
+                )
+            else:
+                stopover_sections.append(
+                    f"▸ Best via {city}:\n  (no priced combo found)\n"
+                )
+        stopover_block = "\n".join(stopover_sections)
+    else:
+        stopover_block = "  (no stopover candidates configured)\n"
+
     return (
         f"{header}\n"
         "🥇 BEST CASH COMBO\n"
@@ -183,6 +236,9 @@ def format_digest(
         f"{points_block}\n"
         "✈  BEST DIRECT (no stopover)\n"
         f"{direct_block}\n"
+        "──────────────────────────────────────────────────────────────\n"
+        "🏝  BEST STOPOVER OPTIONS  (cheapest combo via each Caribbean city)\n"
+        f"{stopover_block}\n"
         "──────────────────────────────────────────────────────────────\n"
         f"FULL RANKING (top 10 of {len(ranked_combos)} combinations)\n\n"
         f"{top_rows}\n"

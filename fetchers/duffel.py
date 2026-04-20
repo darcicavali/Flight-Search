@@ -142,15 +142,104 @@ async def _fetch_one(
         first_slice = slices[0]
         result["duration_hours"] = _duration_iso_to_hours(first_slice.get("duration"))
         result["duration_str"] = _hours_str(result["duration_hours"])
-        segments = first_slice.get("segments") or []
-        result["stops"] = max(len(segments) - 1, 0)
 
-    # Duffel does not expose a deep link; booking happens via the Orders API.
-    # We surface the offer id so the user can look it up if needed.
-    offer_id = best.get("id")
-    if offer_id:
-        result["booking_url"] = f"https://duffel.com/offers/{offer_id}"
+        raw_segments = first_slice.get("segments") or []
+        result["stops"] = max(len(raw_segments) - 1, 0)
+
+        parsed = _parse_segments(raw_segments, leg.date.isoformat())
+        result["segments"] = parsed["segments"]
+        result["layovers"] = parsed["layovers"]
+        result["depart_time"] = parsed["depart_time"]
+        result["arrive_time"] = parsed["arrive_time"]
+
+    # Booking: link to Kayak search pre-filled for this leg. Duffel offer IDs
+    # aren't publicly browsable; Kayak gives the user a real path to book.
+    result["booking_url"] = _kayak_url(leg.origin, leg.destination, leg.date.isoformat())
     return result
+
+
+def _parse_segments(raw_segments: list, leg_date_iso: str) -> dict:
+    """Extract per-segment info and compute layover durations between them."""
+    out_segments = []
+    for s in raw_segments:
+        origin = (s.get("origin") or {}).get("iata_code")
+        destination = (s.get("destination") or {}).get("iata_code")
+        carrier = (s.get("marketing_carrier") or {}).get("iata_code") \
+            or (s.get("operating_carrier") or {}).get("iata_code")
+        flight_no = s.get("marketing_carrier_flight_number") \
+            or s.get("operating_carrier_flight_number")
+        depart = s.get("departing_at")   # ISO datetime
+        arrive = s.get("arriving_at")
+        out_segments.append({
+            "carrier": carrier,
+            "flight_no": flight_no,
+            "origin": origin,
+            "destination": destination,
+            "depart": depart,
+            "arrive": arrive,
+        })
+
+    layovers = []
+    for i in range(len(raw_segments) - 1):
+        arr = raw_segments[i].get("arriving_at")
+        dep = raw_segments[i + 1].get("departing_at")
+        airport = (raw_segments[i + 1].get("origin") or {}).get("iata_code")
+        if arr and dep and airport:
+            h = _duration_between(arr, dep)
+            if h is not None:
+                layovers.append(f"{airport} {_hours_str(h)}")
+
+    depart_time = None
+    arrive_time = None
+    if raw_segments:
+        first_depart = raw_segments[0].get("departing_at")
+        last_arrive = raw_segments[-1].get("arriving_at")
+        depart_time = _extract_hhmm(first_depart)
+        arrive_time = _extract_hhmm(last_arrive, compare_date=leg_date_iso)
+
+    return {
+        "segments": out_segments,
+        "layovers": layovers,
+        "depart_time": depart_time,
+        "arrive_time": arrive_time,
+    }
+
+
+def _extract_hhmm(iso_dt: Optional[str], compare_date: Optional[str] = None) -> Optional[str]:
+    """Pull HH:MM from an ISO-8601 datetime string. Appends '+1' if date differs."""
+    if not iso_dt:
+        return None
+    date_part, _, rest = iso_dt.partition("T")
+    hhmm = rest[:5] if rest else None
+    if not hhmm:
+        return None
+    if compare_date and date_part and date_part != compare_date:
+        # Only add the +1/+2 suffix if the arrival is on a later day than the
+        # leg's scheduled departure date.
+        try:
+            from datetime import date as _date
+            d0 = _date.fromisoformat(compare_date)
+            d1 = _date.fromisoformat(date_part)
+            delta = (d1 - d0).days
+            if delta > 0:
+                return f"{hhmm}+{delta}"
+        except Exception:
+            pass
+    return hhmm
+
+
+def _duration_between(start_iso: str, end_iso: str) -> Optional[float]:
+    from datetime import datetime
+    try:
+        s = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+        e = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+        return round((e - s).total_seconds() / 3600, 2)
+    except Exception:
+        return None
+
+
+def _kayak_url(origin: str, destination: str, iso_date: str) -> str:
+    return f"https://www.kayak.com/flights/{origin}-{destination}/{iso_date}?sort=price_a"
 
 
 async def fetch_cash_fares(

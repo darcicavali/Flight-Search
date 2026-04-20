@@ -84,7 +84,26 @@ async def _fetch_one(
     result["duration_str"] = _duration_str(duration_total) if duration_total else None
     route = best.get("route") or []
     result["stops"] = max(len(route) - 1, 0)
-    result["booking_url"] = best.get("deep_link")
+    # Kiwi does give a real deep_link that actually books — prefer it over Kayak.
+    result["booking_url"] = best.get("deep_link") or (
+        f"https://www.kayak.com/flights/{leg.origin}-{leg.destination}/"
+        f"{leg.date.isoformat()}?sort=price_a"
+    )
+    # Extract segment/time info from Kiwi's route list.
+    segs = []
+    for seg in route:
+        segs.append({
+            "carrier": seg.get("airline"),
+            "flight_no": seg.get("flight_no"),
+            "origin": seg.get("flyFrom"),
+            "destination": seg.get("flyTo"),
+            "depart": seg.get("local_departure"),
+            "arrive": seg.get("local_arrival"),
+        })
+    result["segments"] = segs
+    if segs:
+        result["depart_time"] = (segs[0].get("depart") or "")[11:16] or None
+        result["arrive_time"] = (segs[-1].get("arrive") or "")[11:16] or None
     return result
 
 
