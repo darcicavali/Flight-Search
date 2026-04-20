@@ -1,28 +1,41 @@
-"""Hard constraints that filter or flag combos before scoring.
+"""Hard constraints that filter or flag combos — both pre- and post-fetch.
 
-These run BEFORE fetching fares — they only depend on the combo shape (legs,
-dates, airports) not on API data.
+`apply_constraints` runs BEFORE fetching fares and only uses combo shape.
+`prune_short_gru_connections` runs AFTER fetching and uses real flight times.
 """
 
-from datetime import datetime, time
-from typing import List
+from datetime import date as _date
+from datetime import datetime, timedelta
+from typing import List, Optional, Tuple
 
 from engine.routes import Combo
 
+# Time needed to transit between GRU and CGH/VCP airports on the ground. Added
+# on top of the base minimum-connection requirement for cross-airport combos.
+CROSS_AIRPORT_TRANSFER_HOURS = 2.0
+
+ALT_SP_AIRPORTS = {"CGH", "VCP"}
+
 
 def _find_gru_intl_to_dom(combo: Combo):
-    """Return (intl_leg, dom_leg) if combo has an international→domestic transfer at GRU."""
+    """Return (intl_leg, dom_leg, i, cross_airport) if the combo routes
+    international→domestic via GRU, including CGH/VCP alternates.
+    """
     for i in range(len(combo.legs) - 1):
         a, b = combo.legs[i], combo.legs[i + 1]
-        if a.destination == "GRU" and b.origin == "GRU":
-            return a, b
+        if a.destination != "GRU":
+            continue
+        if b.origin == "GRU":
+            return a, b, i, False
+        if b.origin in ALT_SP_AIRPORTS:
+            return a, b, i, True
     return None
 
 
 def _has_cgh_mismatch(combo: Combo) -> bool:
     for i in range(len(combo.legs) - 1):
         a, b = combo.legs[i], combo.legs[i + 1]
-        if a.destination == "GRU" and b.origin in {"CGH", "VCP"}:
+        if a.destination == "GRU" and b.origin in ALT_SP_AIRPORTS:
             return True
     return False
 
@@ -53,9 +66,8 @@ def _connection_hours(combo: Combo) -> float:
 
 
 def apply_constraints(combos: List[Combo], constraints: dict) -> List[Combo]:
-    """Filter combos that violate hard rules, attach flags to the rest."""
+    """Pre-fetch: filter combos violating date-shape rules, attach flags."""
     min_gru_conn = float(constraints.get("gru_min_connection_hours", 3))
-    max_travel = float(constraints.get("max_total_travel_hours", 36))
     flag_cgh = bool(constraints.get("flag_gru_cgr_mismatch", True))
 
     valid: List[Combo] = []
@@ -64,11 +76,12 @@ def apply_constraints(combos: List[Combo], constraints: dict) -> List[Combo]:
 
         gru_pair = _find_gru_intl_to_dom(combo)
         if gru_pair:
-            a, b = gru_pair
+            a, b, _, cross_airport = gru_pair
             diff_hours = (b.date - a.date).days * 24.0
             if diff_hours == 0:
-                diff_hours = 4.0  # assumed same-day connection
-            if diff_hours < min_gru_conn:
+                diff_hours = 4.0  # same-day heuristic; real check runs post-fetch
+            threshold = min_gru_conn + (CROSS_AIRPORT_TRANSFER_HOURS if cross_airport else 0)
+            if diff_hours < threshold:
                 continue  # hard reject
 
         if flag_cgh and _has_cgh_mismatch(combo):
@@ -81,6 +94,64 @@ def apply_constraints(combos: List[Combo], constraints: dict) -> List[Combo]:
         valid.append(combo)
 
     return valid
+
+
+def _parse_hhmm(s: Optional[str]) -> Optional[Tuple[int, int, int]]:
+    """Parse 'HH:MM' or 'HH:MM+N' → (hour, minute, day_offset). None if invalid."""
+    if not s:
+        return None
+    day_offset = 0
+    if "+" in s:
+        s, plus = s.split("+", 1)
+        try:
+            day_offset = int(plus)
+        except ValueError:
+            return None
+    try:
+        h, m = s.split(":")
+        return int(h), int(m), day_offset
+    except ValueError:
+        return None
+
+
+def _connection_hours_real(intl_leg: dict, dom_leg: dict) -> Optional[float]:
+    """Actual hours between intl arrival and domestic departure, or None if
+    required time/date fields are missing.
+    """
+    arr = _parse_hhmm(intl_leg.get("arrive_time"))
+    dep = _parse_hhmm(dom_leg.get("depart_time"))
+    if not arr or not dep:
+        return None
+    try:
+        intl_d = _date.fromisoformat(intl_leg["date"])
+        dom_d = _date.fromisoformat(dom_leg["date"])
+    except (KeyError, ValueError, TypeError):
+        return None
+    ah, am, aoff = arr
+    dh, dm, doff = dep
+    arrive_dt = datetime(intl_d.year, intl_d.month, intl_d.day, ah, am) + timedelta(days=aoff)
+    depart_dt = datetime(dom_d.year, dom_d.month, dom_d.day, dh, dm) + timedelta(days=doff)
+    return (depart_dt - arrive_dt).total_seconds() / 3600
+
+
+def prune_short_gru_connections(scored, min_gru_conn: float):
+    """Post-fetch: reject combos whose real GRU intl→domestic gap is below
+    `min_gru_conn` (plus a 2h transfer buffer for CGH/VCP alternates).
+    Combos with missing time data pass through — the pre-fetch date-based
+    filter already vetted them.
+    """
+    kept = []
+    for sc in scored:
+        pair = _find_gru_intl_to_dom(sc.combo)
+        if pair is None:
+            kept.append(sc)
+            continue
+        _, _, i, cross_airport = pair
+        threshold = min_gru_conn + (CROSS_AIRPORT_TRANSFER_HOURS if cross_airport else 0)
+        hours = _connection_hours_real(sc.legs_data[i], sc.legs_data[i + 1])
+        if hours is None or hours >= threshold:
+            kept.append(sc)
+    return kept
 
 
 def prune_impossible_after_fetch(scored, max_travel_hours: float):

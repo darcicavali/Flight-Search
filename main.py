@@ -17,7 +17,11 @@ try:
 except ImportError:
     pass
 
-from engine.constraints import apply_constraints, prune_impossible_after_fetch
+from engine.constraints import (
+    apply_constraints,
+    prune_impossible_after_fetch,
+    prune_short_gru_connections,
+)
 from engine.routes import Combo, deduplicate_legs, enumerate_routes
 from engine.scorer import all_legs_found, score_combo
 from fetchers.amadeus import fetch_cash_fares as fetch_amadeus
@@ -129,10 +133,19 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
 
     log.info("Scored %d combos (%d skipped: missing leg fares)", len(scored), skipped)
 
-    max_travel = float(config.get("constraints", {}).get("max_total_travel_hours", 36))
+    constraints_cfg = config.get("constraints", {})
+    max_travel = float(constraints_cfg.get("max_total_travel_hours", 36))
+    min_gru_conn = float(constraints_cfg.get("gru_min_connection_hours", 3))
+
+    before_travel = len(scored)
     scored = prune_impossible_after_fetch(scored, max_travel)
+    before_conn = len(scored)
+    scored = prune_short_gru_connections(scored, min_gru_conn)
     scored.sort(key=lambda x: x.score)
-    log.info("%d combos after post-fetch filtering", len(scored))
+    log.info(
+        "Post-fetch filtering: %d→%d (travel-time), %d→%d (GRU connection)",
+        before_travel, before_conn, before_conn, len(scored),
+    )
 
     prev_day = load_previous_day()
     digest = format_digest(scored, date.today(), config, prev_day_data=prev_day)

@@ -33,3 +33,16 @@ def test_dedup_collapses_shared_legs():
     legs = deduplicate_legs(combos)
     keys = [l.key for l in legs]
     assert len(keys) == len(set(keys))
+
+
+def test_alternate_domestic_origin_produces_cgh_combos():
+    cfg = dict(CFG)
+    cfg["domestic_leg"] = {
+        "origin": "GRU",
+        "alternate_origins": ["CGH"],
+        "destinations": ["NVT", "JOI"],
+    }
+    combos = enumerate_routes(cfg)
+    dom_origins = {c.legs[-1].origin for c in combos}
+    assert "GRU" in dom_origins
+    assert "CGH" in dom_origins

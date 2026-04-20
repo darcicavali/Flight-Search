@@ -11,6 +11,7 @@ trips:
 
     domestic_leg:
       origin: "GRU"
+      alternate_origins: ["CGH"]
       destinations: ["NVT", "JOI", "CWB"]
       airlines: ["LATAM", "GOL", "AZUL"]
 
