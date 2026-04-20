@@ -30,7 +30,7 @@ from fetchers.duffel import fetch_cash_fares as fetch_duffel
 from fetchers.kiwi import fetch_cash_fares as fetch_kiwi
 from fetchers.seats_aero import fetch_award_fares
 from fetchers.smiles import fetch_smiles_domestic
-from output.digest import format_digest, send_email
+from output.digest import format_digest, format_digest_html, send_email
 from output.sheets import append_to_sheets, load_previous_day
 
 logging.basicConfig(
@@ -149,6 +149,7 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
 
     prev_day = load_previous_day()
     digest = format_digest(scored, date.today(), config, prev_day_data=prev_day)
+    digest_html = format_digest_html(scored, date.today(), config, prev_day_data=prev_day)
 
     if dry_run:
         print(digest)
@@ -158,7 +159,7 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
             or config.get("notify", {}).get("email")
             or ""
         )
-        sent = send_email(digest, recipient)
+        sent = send_email(digest, recipient, html=digest_html)
         if not sent:
             print("\n[email not sent — falling back to stdout]\n")
             print(digest)

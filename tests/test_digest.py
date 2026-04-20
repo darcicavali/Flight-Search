@@ -2,7 +2,7 @@ from datetime import date
 
 from engine.routes import Combo, Leg
 from engine.scorer import score_combo
-from output.digest import format_digest
+from output.digest import format_digest, format_digest_html
 
 
 CONFIG = {
@@ -48,3 +48,42 @@ def test_format_digest_contains_key_sections():
 def test_format_digest_handles_empty():
     out = format_digest([], date(2026, 4, 19), CONFIG)
     assert "No complete flight combinations" in out
+
+
+def test_html_digest_contains_sections_and_hides_urls_in_text():
+    scored = [_sample_scored()]
+    html = format_digest_html(scored, date(2026, 4, 19), CONFIG)
+    assert "Best Cash Combo" in html
+    assert "Full Ranking" in html
+    # Booking URL should live inside an <a href="…"> not as visible text
+    assert 'href="https://ua.com/x"' in html
+    assert ">Book leg 1</a>" in html
+
+
+def test_codeshare_carrier_rendered_with_operator():
+    combo = Combo(legs=[Leg("ORD", "GRU", date(2026, 7, 26), 1)], combo_type="direct")
+    legs_data = [{
+        "origin": "ORD", "destination": "GRU", "date": "2026-07-26",
+        "price_usd": 750, "airline": "BA", "operated_by": "UA",
+        "duration_hours": 10, "duration_str": "10h00m",
+        "awards": {}, "booking_url": "https://example.com/x",
+        "segments": [{"carrier": "BA", "flight_no": "0117"}],
+    }]
+    sc = score_combo(combo, legs_data, CONFIG)
+    text_out = format_digest([sc], date(2026, 4, 19), CONFIG)
+    html_out = format_digest_html([sc], date(2026, 4, 19), CONFIG)
+    assert "British Airways (op. by United" in text_out
+    assert "British Airways (op. by United" in html_out
+
+
+def test_non_codeshare_does_not_annotate():
+    combo = Combo(legs=[Leg("ORD", "GRU", date(2026, 7, 26), 1)], combo_type="direct")
+    legs_data = [{
+        "origin": "ORD", "destination": "GRU", "date": "2026-07-26",
+        "price_usd": 750, "airline": "UA", "operated_by": None,
+        "duration_hours": 10, "duration_str": "10h00m",
+        "awards": {}, "booking_url": "https://ua.com/x",
+    }]
+    sc = score_combo(combo, legs_data, CONFIG)
+    out = format_digest([sc], date(2026, 4, 19), CONFIG)
+    assert "op. by" not in out

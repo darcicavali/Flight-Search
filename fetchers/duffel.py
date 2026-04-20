@@ -151,6 +151,7 @@ async def _fetch_one(
         result["layovers"] = parsed["layovers"]
         result["depart_time"] = parsed["depart_time"]
         result["arrive_time"] = parsed["arrive_time"]
+        result["operated_by"] = parsed["operated_by"]
 
     # Booking: link to Kayak search pre-filled for this leg. Duffel offer IDs
     # aren't publicly browsable; Kayak gives the user a real path to book.
@@ -164,14 +165,17 @@ def _parse_segments(raw_segments: list, leg_date_iso: str) -> dict:
     for s in raw_segments:
         origin = (s.get("origin") or {}).get("iata_code")
         destination = (s.get("destination") or {}).get("iata_code")
-        carrier = (s.get("marketing_carrier") or {}).get("iata_code") \
-            or (s.get("operating_carrier") or {}).get("iata_code")
+        marketing = (s.get("marketing_carrier") or {}).get("iata_code")
+        operating = (s.get("operating_carrier") or {}).get("iata_code")
+        carrier = marketing or operating
         flight_no = s.get("marketing_carrier_flight_number") \
             or s.get("operating_carrier_flight_number")
         depart = s.get("departing_at")   # ISO datetime
         arrive = s.get("arriving_at")
         out_segments.append({
             "carrier": carrier,
+            "marketing_carrier": marketing,
+            "operating_carrier": operating,
             "flight_no": flight_no,
             "origin": origin,
             "destination": destination,
@@ -197,11 +201,20 @@ def _parse_segments(raw_segments: list, leg_date_iso: str) -> dict:
         depart_time = _extract_hhmm(first_depart)
         arrive_time = _extract_hhmm(last_arrive, compare_date=leg_date_iso)
 
+    # Codeshare detection: operating carriers that differ from marketing.
+    operated_by = sorted({
+        s["operating_carrier"] for s in out_segments
+        if s.get("operating_carrier")
+        and s.get("marketing_carrier")
+        and s["operating_carrier"] != s["marketing_carrier"]
+    })
+
     return {
         "segments": out_segments,
         "layovers": layovers,
         "depart_time": depart_time,
         "arrive_time": arrive_time,
+        "operated_by": "/".join(operated_by) if operated_by else None,
     }
 
 

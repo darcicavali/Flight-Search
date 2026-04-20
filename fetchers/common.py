@@ -57,6 +57,7 @@ def empty_leg_result(origin: str, destination: str, iso_date: str) -> dict:
         "layovers": [],            # ["LIM 2h15m"]
         "depart_time": None,       # "HH:MM"
         "arrive_time": None,       # "HH:MM" (plus "+1" suffix if next-day)
+        "operated_by": None,       # operating carrier IATA if it differs from marketing
         "booking_url": None,
         "awards": {},
         "source": None,
