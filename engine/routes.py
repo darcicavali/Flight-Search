@@ -86,6 +86,36 @@ def enumerate_routes(config: dict) -> List[Combo]:
                         )
                     )
 
+    # Through-ticket combos: let the airline own the intl→domestic connection
+    # under a single PNR. Duffel returns the full multi-segment itinerary for
+    # these, so we only need one Leg per booking.
+    if (config.get("through_tickets") or {}).get("enabled"):
+        for depart in depart_dates:
+            # ORD → domestic as a single booking
+            for dom_dest in domestic_dests:
+                combos.append(
+                    Combo(
+                        legs=[Leg("ORD", dom_dest, depart, 1)],
+                        combo_type="through_direct",
+                    )
+                )
+            # ORD → stopover, then stopover → domestic as one through ticket
+            for stopover in stopover_candidates:
+                for stop_days in range(min_stop, max_stop + 1):
+                    transit_date = depart + timedelta(days=stop_days)
+                    for dom_dest in domestic_dests:
+                        combos.append(
+                            Combo(
+                                legs=[
+                                    Leg("ORD", stopover, depart, 1),
+                                    Leg(stopover, dom_dest, transit_date, 2),
+                                ],
+                                combo_type="through_stopover",
+                                stopover_city=stopover,
+                                stopover_days=stop_days,
+                            )
+                        )
+
     return combos
 
 

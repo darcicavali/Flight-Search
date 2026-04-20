@@ -186,7 +186,15 @@ def format_digest(
 
     top_cash = next((c for c in ranked_combos if c.verdict == "CASH WINS"), ranked_combos[0])
     top_points = next((c for c in ranked_combos if "POINTS" in c.verdict), None)
-    top_direct = next((c for c in ranked_combos if c.combo.combo_type == "direct"), None)
+    top_direct = next(
+        (c for c in ranked_combos
+         if c.combo.combo_type in ("direct", "through_direct")),
+        None,
+    )
+    top_through_direct = next(
+        (c for c in ranked_combos if c.combo.combo_type == "through_direct"),
+        None,
+    )
 
     # Best combo per stopover city — cheapest combo that routes through each
     # candidate Caribbean city, regardless of whether it tops the overall list.
@@ -243,6 +251,12 @@ def format_digest(
     else:
         stopover_block = "  (no stopover candidates configured)\n"
 
+    through_block = (
+        _format_combo_block(top_through_direct, prev_day_data)
+        if top_through_direct
+        else "  No single-ticket through options priced\n"
+    )
+
     return (
         f"{header}\n"
         "🥇 BEST CASH COMBO\n"
@@ -251,6 +265,8 @@ def format_digest(
         f"{points_block}\n"
         "✈  BEST DIRECT (no stopover)\n"
         f"{direct_block}\n"
+        "🎫 BEST SINGLE-TICKET (ORD → final dest on one PNR)\n"
+        f"{through_block}\n"
         "──────────────────────────────────────────────────────────────\n"
         "🏝  BEST STOPOVER OPTIONS  (cheapest combo via each Caribbean city)\n"
         f"{stopover_block}\n"
@@ -481,7 +497,15 @@ def format_digest_html(
 
     top_cash = next((c for c in ranked_combos if c.verdict == "CASH WINS"), ranked_combos[0])
     top_points = next((c for c in ranked_combos if "POINTS" in c.verdict), None)
-    top_direct = next((c for c in ranked_combos if c.combo.combo_type == "direct"), None)
+    top_direct = next(
+        (c for c in ranked_combos
+         if c.combo.combo_type in ("direct", "through_direct")),
+        None,
+    )
+    top_through_direct = next(
+        (c for c in ranked_combos if c.combo.combo_type == "through_direct"),
+        None,
+    )
 
     stopover_candidates = (trip_config.get("stopovers") or {}).get("candidates") or []
     best_per_stopover = {}
@@ -511,6 +535,10 @@ def format_digest_html(
                    else '<p style="color:#666;">No award space found for this date range.</p>')
     direct_html = (_html_combo_card(top_direct, prev_day_data) if top_direct
                    else '<p style="color:#666;">No direct options in range.</p>')
+    through_html = (
+        _html_combo_card(top_through_direct, prev_day_data) if top_through_direct
+        else '<p style="color:#666;">No single-ticket through options priced.</p>'
+    )
 
     if best_per_stopover:
         stopover_html = "".join(
@@ -545,6 +573,7 @@ def format_digest_html(
         f'{_section("🥇 Best Cash Combo", cash_html)}'
         f'{_section("🏆 Best Points Combo", points_html)}'
         f'{_section("✈ Best Direct (no stopover)", direct_html)}'
+        f'{_section("🎫 Best Single-Ticket (one PNR end to end)", through_html)}'
         f'{_section("🏝 Best Stopover Options", stopover_html)}'
         f'{_section("Full Ranking", ranking_html)}'
         f'{_section("Award Space Alerts", alerts_html)}'

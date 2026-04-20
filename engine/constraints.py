@@ -21,12 +21,14 @@ def _find_gru_intl_to_dom(combo: Combo):
 
 
 def _is_separate_tickets(combo: Combo) -> bool:
-    # Phase 1 assumption: intl legs (leg 1–2) and domestic leg (leg 3) are always
-    # sold on separate tickets since no single carrier sells ORD→stopover→GRU→SC as
-    # one PNR in our target set.
-    return len(combo.legs) >= 2 and any(
-        leg.destination in {"NVT", "JOI", "CWB"} for leg in combo.legs
-    )
+    """Only true when the GRU intl→domestic handoff crosses a leg boundary.
+    Through-ticket combos fold that handoff into a single PNR.
+    """
+    for i in range(len(combo.legs) - 1):
+        a, b = combo.legs[i], combo.legs[i + 1]
+        if a.destination == "GRU" and b.origin == "GRU":
+            return True
+    return False
 
 
 def apply_constraints(combos: List[Combo], constraints: dict) -> List[Combo]:
@@ -48,6 +50,11 @@ def apply_constraints(combos: List[Combo], constraints: dict) -> List[Combo]:
 
         if _is_separate_tickets(combo):
             flags.append("📋 SEPARATE TICKETS — no protection if earlier leg is delayed")
+
+        if combo.combo_type == "through_direct":
+            flags.append("🎫 SINGLE TICKET — airline owns all connections end to end")
+        elif combo.combo_type == "through_stopover":
+            flags.append("🎫 SINGLE-PNR LEGS — stopover→destination is one booking")
 
         combo.flags = flags
         valid.append(combo)

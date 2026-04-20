@@ -33,3 +33,24 @@ def test_dedup_collapses_shared_legs():
     legs = deduplicate_legs(combos)
     keys = [l.key for l in legs]
     assert len(keys) == len(set(keys))
+
+
+def test_through_tickets_produce_one_leg_direct_and_two_leg_stopover():
+    cfg = dict(CFG)
+    cfg["through_tickets"] = {"enabled": True}
+    combos = enumerate_routes(cfg)
+    by_type = {}
+    for c in combos:
+        by_type.setdefault(c.combo_type, []).append(c)
+    assert "through_direct" in by_type
+    assert "through_stopover" in by_type
+    assert all(len(c.legs) == 1 for c in by_type["through_direct"])
+    assert all(len(c.legs) == 2 for c in by_type["through_stopover"])
+    # Through-direct leg goes straight from ORD to the final domestic destination
+    assert all(c.legs[0].origin == "ORD" and c.legs[0].destination in {"NVT", "JOI"}
+               for c in by_type["through_direct"])
+
+
+def test_through_tickets_disabled_by_default():
+    combos = enumerate_routes(CFG)
+    assert all(c.combo_type in {"direct", "stopover_caribbean"} for c in combos)

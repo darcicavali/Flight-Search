@@ -5,9 +5,12 @@ trips:
     final_destination: "GRU"
 
     stopovers:
-      candidates: ["ADZ", "CTG", "AUA"]
+      candidates: ["ADZ", "CTG", "AUA", "GIG"]
       min_days: 2
       max_days: 4
+
+    through_tickets:
+      enabled: true
 
     domestic_leg:
       origin: "GRU"

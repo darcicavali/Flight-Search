@@ -104,3 +104,40 @@ def test_real_time_gru_connection_passes_when_times_missing():
     scored = [_FakeScored(combo=combo, legs_data=legs_data)]
     kept = prune_short_gru_connections(scored, min_gru_conn=3.0)
     assert len(kept) == 1
+
+
+def test_through_direct_gets_single_ticket_flag_not_separate_tickets():
+    combo = Combo(
+        legs=[Leg("ORD", "NVT", date(2026, 7, 26), 1)],
+        combo_type="through_direct",
+    )
+    combos = apply_constraints([combo], {"gru_min_connection_hours": 3})
+    assert len(combos) == 1
+    flags = combos[0].flags
+    assert any("SINGLE TICKET" in f for f in flags)
+    assert not any("SEPARATE TICKETS" in f for f in flags)
+
+
+def test_through_stopover_single_pnr_flag_no_separate_flag():
+    combo = Combo(
+        legs=[
+            Leg("ORD", "AUA", date(2026, 7, 26), 1),
+            Leg("AUA", "NVT", date(2026, 7, 28), 2),  # stopover→dom as one ticket
+        ],
+        combo_type="through_stopover",
+        stopover_city="AUA",
+        stopover_days=2,
+    )
+    combos = apply_constraints([combo], {"gru_min_connection_hours": 3})
+    assert len(combos) == 1
+    flags = combos[0].flags
+    assert any("SINGLE-PNR" in f for f in flags)
+    assert not any("SEPARATE TICKETS" in f for f in flags)
+
+
+def test_classic_stopover_still_gets_separate_tickets_flag():
+    combo = _combo_next_day_transfer()  # ORD→ADZ, ADZ→GRU, GRU→NVT
+    combo.combo_type = "stopover_caribbean"
+    combos = apply_constraints([combo], {"gru_min_connection_hours": 3})
+    assert len(combos) == 1
+    assert any("SEPARATE TICKETS" in f for f in combos[0].flags)
