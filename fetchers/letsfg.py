@@ -106,6 +106,11 @@ def _offer_to_leg_result(offer, leg: Leg, rates: dict) -> dict:
     result = empty_leg_result(leg.origin, leg.destination, leg.date.isoformat())
     result["source"] = "letsfg"
 
+    route = offer.outbound
+    if route is None or not route.segments:
+        result["error"] = "no outbound segments"
+        return result
+
     try:
         result["price_usd"] = round(to_usd(float(offer.price), offer.currency, rates), 2)
     except (TypeError, ValueError):
@@ -113,11 +118,6 @@ def _offer_to_leg_result(offer, leg: Leg, rates: dict) -> dict:
         return result
 
     result["airline"] = offer.owner_airline or (offer.airlines[0] if offer.airlines else None)
-
-    route = offer.outbound
-    if route is None or not route.segments:
-        result["error"] = "no outbound segments"
-        return result
 
     result["duration_hours"] = round((route.total_duration_seconds or 0) / 3600, 2)
     result["duration_str"] = _hours_str(result["duration_hours"])

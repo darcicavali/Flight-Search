@@ -32,6 +32,7 @@ IATA_TO_NAME = {
     # Brazil — domestic
     "G3": "GOL",
     "AD": "Azul",
+    "AZ": "ITA Airways",
     "2Z": "Voepass (Passaredo)",
     # Caribbean / Central America
     "AM": "Aeroméxico",
@@ -43,6 +44,8 @@ IATA_TO_NAME = {
     "WG": "Sunwing",
     "P6": "Wingo",
     "DM": "Arajet",
+    "9R": "SATENA",
+    "4C": "LATAM Colombia",
     # Canada
     "AC": "Air Canada",
     "WS": "WestJet",

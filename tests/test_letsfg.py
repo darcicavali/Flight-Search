@@ -5,6 +5,8 @@ fakes that mimic LetsFG's FlightOffer/FlightRoute/FlightSegment dataclasses.
 """
 
 import asyncio
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Optional
@@ -210,3 +212,82 @@ def test_timeout_returns_error(monkeypatch):
     res = asyncio.run(letsfg.fetch_cash_fares([leg], cfg))[leg.key]
     assert res["price_usd"] is None
     assert res["error"] and "timeout" in res["error"]
+
+
+def test_outbound_none_returns_no_outbound_segments(monkeypatch):
+    leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
+    offer = _direct_offer()
+    offer.outbound = None
+    _patch_search(monkeypatch, {
+        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+    })
+    res = _run([leg])[leg.key]
+    assert res["price_usd"] is None
+    assert res["error"] == "no outbound segments"
+
+
+def test_empty_outbound_segments_returns_no_outbound_segments(monkeypatch):
+    leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
+    offer = _direct_offer()
+    offer.outbound = _FakeRoute(segments=[], total_duration_seconds=0)
+    _patch_search(monkeypatch, {
+        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+    })
+    res = _run([leg])[leg.key]
+    assert res["price_usd"] is None
+    assert res["error"] == "no outbound segments"
+
+
+def test_airline_falls_back_to_airlines_list_when_owner_missing(monkeypatch):
+    leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
+    offer = _direct_offer()
+    offer.owner_airline = ""
+    offer.airlines = ["DL", "AF"]
+    _patch_search(monkeypatch, {
+        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+    })
+    res = _run([leg])[leg.key]
+    assert res["airline"] == "DL"
+    assert res["error"] is None
+
+
+def test_unknown_currency_treated_as_usd_with_warning(monkeypatch, caplog):
+    leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
+    offer = _direct_offer()
+    offer.price = 321.0
+    offer.currency = "XYZ"
+    _patch_search(monkeypatch, {
+        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+    })
+    import fetchers.common as common
+    common._rates_cache = {"USD": 1.0}
+    try:
+        with caplog.at_level("WARNING"):
+            res = _run([leg])[leg.key]
+    finally:
+        common._rates_cache = None
+    assert res["price_usd"] == 321.0
+    assert "No FX rate for XYZ" in caplog.text
+
+
+def test_concurrency_cap_limits_in_flight_search_calls(monkeypatch):
+    legs = [Leg("ORD", "GRU", date(2026, 7, 26 + i), i + 1) for i in range(4)]
+    lock = threading.Lock()
+    in_flight = 0
+    max_in_flight = 0
+
+    def fake(origin, destination, iso_date, currency, limit, max_browsers):
+        nonlocal in_flight, max_in_flight
+        with lock:
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+        time.sleep(0.1)
+        with lock:
+            in_flight -= 1
+        return _FakeSearch(offers=[_direct_offer()])
+
+    monkeypatch.setattr(letsfg, "_search_sync", fake)
+    cfg = {"fetchers": {"letsfg": {"concurrency": 2}}}
+    out = _run(legs, cfg)
+    assert len(out) == 4
+    assert max_in_flight <= 2
