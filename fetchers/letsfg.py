@@ -1,13 +1,13 @@
 """LetsFG cash-fare fetcher — primary price source.
 
-LetsFG (https://pypi.org/project/letsfg/) runs ~100 airline-site scrapers
-locally via Playwright + httpx. `search()` is completely free; only `unlock()`
-and `book()` require an API key. We just want prices and booking URLs, so we
-use `search()` only.
+Calls LetsFG's internal async API (`letsfg.local.search_local`) with
+`mode='fast'` so we only hit ~25 OTA/airline-direct connectors instead of
+the 100+ the library runs by default. Fast mode typically returns in
+~5–10s per leg (vs 60s+ in full mode), and the browser-heavy connectors
+that don't work in GitHub Actions runners are excluded.
 
-Trade-off vs Duffel: real bookable prices from real airline sites (no synthetic
-test data), but each call spins up browsers and takes ~10–20s. We wrap the
-synchronous library in `run_in_executor` and cap concurrency.
+search_local returns a dict (no pydantic models), so we consume it as-is
+and avoid the sync-wrapper boilerplate.
 """
 
 import asyncio
@@ -23,12 +23,11 @@ from fetchers.common import empty_leg_result, get_rates, to_usd
 
 log = logging.getLogger(__name__)
 
-# Playwright browser spinup is heavy — keep this conservative. Each search
-# already parallelises ~100 site scrapers internally via `max_browsers`.
 DEFAULT_CONCURRENCY = 2
-DEFAULT_MAX_BROWSERS = 3
+DEFAULT_MAX_BROWSERS = 2
 DEFAULT_LIMIT = 10
-DEFAULT_TIMEOUT_SECONDS = 90
+DEFAULT_TIMEOUT_SECONDS = 45
+DEFAULT_MODE = "fast"
 
 
 def _hours_str(hours: Optional[float]) -> Optional[str]:
@@ -68,30 +67,30 @@ def _layover_hours(arrive_iso: str, depart_iso: str) -> Optional[float]:
         return None
 
 
-def _offer_to_segments(route, leg_date_iso: str) -> dict:
-    """Translate a LetsFG FlightRoute into our segments/layovers shape."""
+def _route_to_segments(route: dict, leg_date_iso: str) -> dict:
+    """Translate a LetsFG outbound-route dict into our segments/layovers shape."""
+    raw = route.get("segments") or []
     out_segments = []
-    for s in route.segments:
+    for s in raw:
         out_segments.append({
-            "carrier": s.airline,
-            "marketing_carrier": s.airline,
+            "carrier": s.get("airline"),
+            "marketing_carrier": s.get("airline"),
             "operating_carrier": None,
-            "flight_no": s.flight_no,
-            "origin": s.origin,
-            "destination": s.destination,
-            "depart": s.departure,
-            "arrive": s.arrival,
+            "flight_no": s.get("flight_no"),
+            "origin": s.get("origin"),
+            "destination": s.get("destination"),
+            "depart": s.get("departure"),
+            "arrive": s.get("arrival"),
         })
 
     layovers: List[str] = []
-    raw = route.segments
     for i in range(len(raw) - 1):
-        h = _layover_hours(raw[i].arrival, raw[i + 1].departure)
+        h = _layover_hours(raw[i].get("arrival"), raw[i + 1].get("departure"))
         if h is not None:
-            layovers.append(f"{raw[i + 1].origin} {_hours_str(h)}")
+            layovers.append(f"{raw[i + 1].get('origin')} {_hours_str(h)}")
 
-    depart_time = _hhmm(raw[0].departure) if raw else None
-    arrive_time = _hhmm(raw[-1].arrival, compare_date=leg_date_iso) if raw else None
+    depart_time = _hhmm(raw[0].get("departure")) if raw else None
+    arrive_time = _hhmm(raw[-1].get("arrival"), compare_date=leg_date_iso) if raw else None
 
     return {
         "segments": out_segments,
@@ -101,58 +100,63 @@ def _offer_to_segments(route, leg_date_iso: str) -> dict:
     }
 
 
-def _offer_to_leg_result(offer, leg: Leg, rates: dict) -> dict:
-    """Translate a single FlightOffer into the empty_leg_result shape."""
+def _offer_to_leg_result(offer: dict, leg: Leg, rates: dict) -> dict:
+    """Translate a single LetsFG offer dict into the empty_leg_result shape."""
     result = empty_leg_result(leg.origin, leg.destination, leg.date.isoformat())
     result["source"] = "letsfg"
 
-    route = offer.outbound
-    if route is None or not route.segments:
+    route = offer.get("outbound")
+    if not route or not (route.get("segments") or []):
         result["error"] = "no outbound segments"
         return result
 
     try:
-        result["price_usd"] = round(to_usd(float(offer.price), offer.currency, rates), 2)
+        result["price_usd"] = round(
+            to_usd(float(offer.get("price") or 0), offer.get("currency") or "USD", rates), 2
+        )
     except (TypeError, ValueError):
         result["error"] = "could not parse price"
         return result
 
-    result["airline"] = offer.owner_airline or (offer.airlines[0] if offer.airlines else None)
+    airlines = offer.get("airlines") or []
+    result["airline"] = offer.get("owner_airline") or (airlines[0] if airlines else None)
 
-    result["duration_hours"] = round((route.total_duration_seconds or 0) / 3600, 2)
+    segments = route.get("segments") or []
+    result["duration_hours"] = round((route.get("total_duration_seconds") or 0) / 3600, 2)
     result["duration_str"] = _hours_str(result["duration_hours"])
-    result["stops"] = max(len(route.segments) - 1, 0)
+    result["stops"] = max(len(segments) - 1, 0)
 
-    parsed = _offer_to_segments(route, leg.date.isoformat())
+    parsed = _route_to_segments(route, leg.date.isoformat())
     result["segments"] = parsed["segments"]
     result["layovers"] = parsed["layovers"]
     result["depart_time"] = parsed["depart_time"]
     result["arrive_time"] = parsed["arrive_time"]
 
-    result["booking_url"] = offer.booking_url
+    result["booking_url"] = offer.get("booking_url")
     return result
 
 
-def _search_sync(origin: str, destination: str, iso_date: str,
-                 currency: str, limit: int, max_browsers: int):
-    """Blocking LetsFG call — must run in a worker thread."""
-    from letsfg import LetsFG  # local import: heavy module, optional dep
-    return LetsFG().search(
+async def _search_async(origin: str, destination: str, iso_date: str,
+                        currency: str, limit: int, max_browsers: int,
+                        mode: Optional[str]) -> dict:
+    """Call LetsFG's async core. Returns a dict with 'offers' list."""
+    from letsfg.local import search_local  # local import: heavy optional dep
+    return await search_local(
         origin, destination, iso_date,
-        currency=currency, limit=limit, max_browsers=max_browsers,
+        currency=currency, limit=limit,
+        max_browsers=max_browsers, mode=mode,
     )
 
 
-async def _fetch_one(loop, sem: asyncio.Semaphore, leg: Leg, rates: dict,
+async def _fetch_one(sem: asyncio.Semaphore, leg: Leg, rates: dict,
                      currency: str, limit: int, max_browsers: int,
-                     timeout: float) -> dict:
+                     mode: Optional[str], timeout: float) -> dict:
     async with sem:
         try:
             search = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None, _search_sync,
+                _search_async(
                     leg.origin, leg.destination, leg.date.isoformat(),
-                    currency, limit, max_browsers,
+                    currency, limit, max_browsers, mode,
                 ),
                 timeout=timeout,
             )
@@ -168,7 +172,7 @@ async def _fetch_one(loop, sem: asyncio.Semaphore, leg: Leg, rates: dict,
             res["error"] = f"letsfg exception: {e}"
             return res
 
-    offers = getattr(search, "offers", None) or []
+    offers = (search or {}).get("offers") or []
     if not offers:
         res = empty_leg_result(leg.origin, leg.destination, leg.date.isoformat())
         res["source"] = "letsfg"
@@ -183,14 +187,16 @@ async def fetch_cash_fares(
 ) -> Dict[str, dict]:
     """Fetch cash fares for every unique leg via LetsFG. Returns {leg.key: leg_data}.
 
-    Honours these optional config keys under `fetchers.letsfg`:
+    Optional config keys under `fetchers.letsfg`:
+      mode          (default "fast" — ~25 connectors; None = all ~100)
       currency      (default "USD")
       limit         (default 10)
-      max_browsers  (default 3)
+      max_browsers  (default 2)
       concurrency   (default 2)
-      timeout_sec   (default 90)
+      timeout_sec   (default 45)
     """
     cfg = (config.get("fetchers") or {}).get("letsfg") or {}
+    mode = cfg.get("mode", DEFAULT_MODE)
     currency = cfg.get("currency", "USD")
     limit = int(cfg.get("limit", DEFAULT_LIMIT))
     max_browsers = int(cfg.get("max_browsers", DEFAULT_MAX_BROWSERS))
@@ -207,9 +213,8 @@ async def fetch_cash_fares(
             await session.close()
 
     sem = asyncio.Semaphore(concurrency)
-    loop = asyncio.get_event_loop()
     coros = [
-        _fetch_one(loop, sem, leg, rates, currency, limit, max_browsers, timeout)
+        _fetch_one(sem, leg, rates, currency, limit, max_browsers, mode, timeout)
         for leg in legs
     ]
     results = await asyncio.gather(*coros, return_exceptions=True)

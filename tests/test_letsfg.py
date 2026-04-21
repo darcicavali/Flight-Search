@@ -1,15 +1,11 @@
 """Tests for the LetsFG fetcher adapter — no network calls.
 
-We monkeypatch `_search_sync` (the only thing that touches the library) with
-fakes that mimic LetsFG's FlightOffer/FlightRoute/FlightSegment dataclasses.
+We monkeypatch `_search_async` (the only thing that touches the library) with
+async fakes that mimic LetsFG's `search_local` dict return shape.
 """
 
 import asyncio
-import threading
-import time
-from dataclasses import dataclass, field
 from datetime import date
-from typing import List, Optional
 
 import pytest
 
@@ -17,97 +13,81 @@ from engine.routes import Leg
 from fetchers import letsfg
 
 
-@dataclass
-class _FakeSeg:
-    airline: str
-    flight_no: str
-    origin: str
-    destination: str
-    departure: str
-    arrival: str
-    airline_name: str = ""
-    duration_seconds: int = 0
-    cabin_class: str = "economy"
-    aircraft: str = ""
-    origin_city: str = ""
-    destination_city: str = ""
+def _seg(airline, flight_no, origin, destination, departure, arrival,
+         duration_seconds=0):
+    return {
+        "airline": airline,
+        "flight_no": flight_no,
+        "origin": origin,
+        "destination": destination,
+        "departure": departure,
+        "arrival": arrival,
+        "duration_seconds": duration_seconds,
+    }
 
 
-@dataclass
-class _FakeRoute:
-    segments: List[_FakeSeg]
-    total_duration_seconds: int
-    stopovers: int = 0
+def _route(segments, total_duration_seconds, stopovers=0):
+    return {
+        "segments": segments,
+        "total_duration_seconds": total_duration_seconds,
+        "stopovers": stopovers,
+    }
 
 
-@dataclass
-class _FakeOffer:
-    price: float
-    currency: str
-    outbound: Optional[_FakeRoute]
-    airlines: List[str]
-    owner_airline: str
-    booking_url: str
-    inbound: Optional[_FakeRoute] = None
-    id: str = "fake_id"
-    price_formatted: str = ""
-    bags_price: dict = field(default_factory=dict)
-    availability_seats: Optional[int] = None
-    conditions: dict = field(default_factory=dict)
-    is_locked: bool = False
-    fetched_at: str = ""
-
-
-@dataclass
-class _FakeSearch:
-    offers: List[_FakeOffer]
-    passenger_ids: list = field(default_factory=list)
+def _offer(price, currency, outbound, airlines, owner_airline, booking_url):
+    return {
+        "id": "fake_id",
+        "price": price,
+        "currency": currency,
+        "outbound": outbound,
+        "inbound": None,
+        "airlines": airlines,
+        "owner_airline": owner_airline,
+        "booking_url": booking_url,
+    }
 
 
 def _direct_offer():
-    seg = _FakeSeg(
-        airline="UA", flight_no="UA823",
-        origin="ORD", destination="GRU",
-        departure="2026-07-26T19:21:00-05:00",
-        arrival="2026-07-27T09:10:00-03:00",
+    seg = _seg(
+        "UA", "UA823", "ORD", "GRU",
+        "2026-07-26T19:21:00-05:00", "2026-07-27T09:10:00-03:00",
         duration_seconds=42540,
     )
-    return _FakeOffer(
-        price=987.50, currency="USD",
-        outbound=_FakeRoute(segments=[seg], total_duration_seconds=42540, stopovers=0),
-        airlines=["UA"], owner_airline="UA",
-        booking_url="https://example.com/book/UA823",
+    return _offer(
+        987.50, "USD",
+        _route([seg], total_duration_seconds=42540, stopovers=0),
+        ["UA"], "UA",
+        "https://example.com/book/UA823",
     )
 
 
 def _two_stop_offer():
-    s1 = _FakeSeg("NK", "NK756", "ORD", "MIA",
-                  "2026-07-26T07:10:00-05:00", "2026-07-26T11:23:00-04:00")
-    s2 = _FakeSeg("DM", "DM5103", "MIA", "PUJ",
-                  "2026-07-26T16:02:00-04:00", "2026-07-26T18:38:00-04:00")
-    s3 = _FakeSeg("DM", "DM6088", "PUJ", "GRU",
-                  "2026-07-26T20:10:00-04:00", "2026-07-27T04:20:00-03:00")
-    return _FakeOffer(
-        price=457.0, currency="USD",
-        outbound=_FakeRoute(segments=[s1, s2, s3],
-                            total_duration_seconds=46740, stopovers=2),
-        airlines=["NK", "DM"], owner_airline="NK",
-        booking_url="https://skiplagged.com/flights/ORD/GRU/2026-07-26",
+    s1 = _seg("NK", "NK756", "ORD", "MIA",
+              "2026-07-26T07:10:00-05:00", "2026-07-26T11:23:00-04:00")
+    s2 = _seg("DM", "DM5103", "MIA", "PUJ",
+              "2026-07-26T16:02:00-04:00", "2026-07-26T18:38:00-04:00")
+    s3 = _seg("DM", "DM6088", "PUJ", "GRU",
+              "2026-07-26T20:10:00-04:00", "2026-07-27T04:20:00-03:00")
+    return _offer(
+        457.0, "USD",
+        _route([s1, s2, s3], total_duration_seconds=46740, stopovers=2),
+        ["NK", "DM"], "NK",
+        "https://skiplagged.com/flights/ORD/GRU/2026-07-26",
     )
 
 
 def _empty_search():
-    return _FakeSearch(offers=[])
+    return {"offers": []}
 
 
 def _patch_search(monkeypatch, by_route):
-    """by_route maps (origin,dest,iso_date) → _FakeSearch (or callable raising)."""
-    def fake(origin, destination, iso_date, currency, limit, max_browsers):
+    """by_route maps (origin,dest,iso_date) → dict result (or callable raising)."""
+    async def fake(origin, destination, iso_date, currency, limit, max_browsers, mode):
         v = by_route.get((origin, destination, iso_date))
         if callable(v):
             return v()
         return v if v is not None else _empty_search()
-    monkeypatch.setattr(letsfg, "_search_sync", fake)
+    monkeypatch.setattr(letsfg, "_search_async", fake)
 
 
 def _run(legs, config=None):
@@ -117,7 +97,7 @@ def _run(legs, config=None):
 def test_direct_offer_maps_to_leg_result(monkeypatch):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[_direct_offer()]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [_direct_offer()]},
     })
     out = _run([leg])
     res = out[leg.key]
@@ -135,7 +115,7 @@ def test_direct_offer_maps_to_leg_result(monkeypatch):
 def test_multistop_offer_produces_layovers(monkeypatch):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[_two_stop_offer()]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [_two_stop_offer()]},
     })
     res = _run([leg])[leg.key]
     assert res["stops"] == 2
@@ -165,10 +145,10 @@ def test_exception_in_search_is_captured(monkeypatch):
 def test_currency_conversion_applied(monkeypatch):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     eur_offer = _direct_offer()
-    eur_offer.price = 1000.0
-    eur_offer.currency = "EUR"
+    eur_offer["price"] = 1000.0
+    eur_offer["currency"] = "EUR"
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[eur_offer]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [eur_offer]},
     })
     # Stub FX so we don't depend on the network
     import fetchers.common as common
@@ -183,17 +163,17 @@ def test_currency_conversion_applied(monkeypatch):
 def test_multiple_legs_each_get_their_own_search(monkeypatch):
     leg1 = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     leg2 = Leg("GRU", "NVT", date(2026, 7, 28), 2)
-    nvt_seg = _FakeSeg("G3", "G31234", "GRU", "NVT",
-                       "2026-07-28T10:00:00-03:00", "2026-07-28T11:15:00-03:00")
-    nvt_offer = _FakeOffer(
-        price=89.0, currency="USD",
-        outbound=_FakeRoute(segments=[nvt_seg], total_duration_seconds=4500, stopovers=0),
-        airlines=["G3"], owner_airline="G3",
-        booking_url="https://voegol.com.br/x",
+    nvt_seg = _seg("G3", "G31234", "GRU", "NVT",
+                   "2026-07-28T10:00:00-03:00", "2026-07-28T11:15:00-03:00")
+    nvt_offer = _offer(
+        89.0, "USD",
+        _route([nvt_seg], total_duration_seconds=4500, stopovers=0),
+        ["G3"], "G3",
+        "https://voegol.com.br/x",
     )
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[_direct_offer()]),
-        ("GRU", "NVT", "2026-07-28"): _FakeSearch(offers=[nvt_offer]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [_direct_offer()]},
+        ("GRU", "NVT", "2026-07-28"): {"offers": [nvt_offer]},
     })
     out = _run([leg1, leg2])
     assert out[leg1.key]["price_usd"] == 987.50
@@ -203,11 +183,10 @@ def test_multiple_legs_each_get_their_own_search(monkeypatch):
 
 def test_timeout_returns_error(monkeypatch):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
-    import time
-    def slow():
-        time.sleep(2)
-        return _FakeSearch(offers=[_direct_offer()])
-    _patch_search(monkeypatch, {("ORD", "GRU", "2026-07-26"): slow})
+    async def slow(origin, destination, iso_date, currency, limit, max_browsers, mode):
+        await asyncio.sleep(2)
+        return {"offers": [_direct_offer()]}
+    monkeypatch.setattr(letsfg, "_search_async", slow)
     cfg = {"fetchers": {"letsfg": {"timeout_sec": 0.1}}}
     res = asyncio.run(letsfg.fetch_cash_fares([leg], cfg))[leg.key]
     assert res["price_usd"] is None
@@ -217,9 +196,9 @@ def test_timeout_returns_error(monkeypatch):
 def test_outbound_none_returns_no_outbound_segments(monkeypatch):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     offer = _direct_offer()
-    offer.outbound = None
+    offer["outbound"] = None
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [offer]},
     })
     res = _run([leg])[leg.key]
     assert res["price_usd"] is None
@@ -229,9 +208,9 @@ def test_outbound_none_returns_no_outbound_segments(monkeypatch):
 def test_empty_outbound_segments_returns_no_outbound_segments(monkeypatch):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     offer = _direct_offer()
-    offer.outbound = _FakeRoute(segments=[], total_duration_seconds=0)
+    offer["outbound"] = _route([], total_duration_seconds=0)
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [offer]},
     })
     res = _run([leg])[leg.key]
     assert res["price_usd"] is None
@@ -241,10 +220,10 @@ def test_empty_outbound_segments_returns_no_outbound_segments(monkeypatch):
 def test_airline_falls_back_to_airlines_list_when_owner_missing(monkeypatch):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     offer = _direct_offer()
-    offer.owner_airline = ""
-    offer.airlines = ["DL", "AF"]
+    offer["owner_airline"] = ""
+    offer["airlines"] = ["DL", "AF"]
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [offer]},
     })
     res = _run([leg])[leg.key]
     assert res["airline"] == "DL"
@@ -254,10 +233,10 @@ def test_airline_falls_back_to_airlines_list_when_owner_missing(monkeypatch):
 def test_unknown_currency_treated_as_usd_with_warning(monkeypatch, caplog):
     leg = Leg("ORD", "GRU", date(2026, 7, 26), 1)
     offer = _direct_offer()
-    offer.price = 321.0
-    offer.currency = "XYZ"
+    offer["price"] = 321.0
+    offer["currency"] = "XYZ"
     _patch_search(monkeypatch, {
-        ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
+        ("ORD", "GRU", "2026-07-26"): {"offers": [offer]},
     })
     import fetchers.common as common
     common._rates_cache = {"USD": 1.0}
@@ -272,22 +251,19 @@ def test_unknown_currency_treated_as_usd_with_warning(monkeypatch, caplog):
 
 def test_concurrency_cap_limits_in_flight_search_calls(monkeypatch):
     legs = [Leg("ORD", "GRU", date(2026, 7, 26 + i), i + 1) for i in range(4)]
-    lock = threading.Lock()
-    in_flight = 0
-    max_in_flight = 0
+    state = {"in_flight": 0, "max_in_flight": 0}
 
-    def fake(origin, destination, iso_date, currency, limit, max_browsers):
-        nonlocal in_flight, max_in_flight
-        with lock:
-            in_flight += 1
-            max_in_flight = max(max_in_flight, in_flight)
-        time.sleep(0.1)
-        with lock:
-            in_flight -= 1
-        return _FakeSearch(offers=[_direct_offer()])
+    async def fake(origin, destination, iso_date, currency, limit, max_browsers, mode):
+        state["in_flight"] += 1
+        state["max_in_flight"] = max(state["max_in_flight"], state["in_flight"])
+        try:
+            await asyncio.sleep(0.1)
+        finally:
+            state["in_flight"] -= 1
+        return {"offers": [_direct_offer()]}
 
-    monkeypatch.setattr(letsfg, "_search_sync", fake)
+    monkeypatch.setattr(letsfg, "_search_async", fake)
     cfg = {"fetchers": {"letsfg": {"concurrency": 2}}}
     out = _run(legs, cfg)
     assert len(out) == 4
-    assert max_in_flight <= 2
+    assert state["max_in_flight"] <= 2
