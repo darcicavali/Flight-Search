@@ -28,10 +28,6 @@ jobs:
 
       - name: Run flight search
         env:
-          KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
-          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
-          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
-          DUFFEL_ACCESS_TOKEN: ${{ secrets.DUFFEL_ACCESS_TOKEN }}
           SEATS_AERO_API_KEY: ${{ secrets.SEATS_AERO_API_KEY }}
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}

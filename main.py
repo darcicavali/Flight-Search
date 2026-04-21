@@ -24,9 +24,7 @@ from engine.constraints import (
 )
 from engine.routes import Combo, deduplicate_legs, enumerate_routes
 from engine.scorer import all_legs_found, score_combo
-from fetchers.amadeus import fetch_cash_fares as fetch_amadeus
 from fetchers.amadeus import merge_cash
-from fetchers.kiwi import fetch_cash_fares as fetch_kiwi
 from fetchers.letsfg import fetch_cash_fares as fetch_letsfg
 from fetchers.seats_aero import fetch_award_fares
 from fetchers.smiles import fetch_smiles_domestic
@@ -103,21 +101,17 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
     log.info("Fetching fares for %d unique legs", len(unique_legs))
 
     async with aiohttp.ClientSession() as session:
-        kiwi_data, amadeus_data, letsfg_data, award_data, domestic_award_data = await asyncio.gather(
-            fetch_kiwi(unique_legs, config, session=session),
-            fetch_amadeus(unique_legs, config, session=session),
+        letsfg_data, award_data, domestic_award_data = await asyncio.gather(
             fetch_letsfg(unique_legs, config, session=session),
             fetch_award_fares(unique_legs, config, session=session),
             fetch_smiles_domestic(unique_legs, config, session=session),
         )
 
-    _log_fetcher_summary("kiwi", kiwi_data)
-    _log_fetcher_summary("amadeus", amadeus_data)
     _log_fetcher_summary("letsfg", letsfg_data)
     _log_fetcher_summary("seats_aero", award_data, is_award=True)
     _log_fetcher_summary("smiles", domestic_award_data, is_award=True)
 
-    cash_data = merge_cash(kiwi_data, amadeus_data, letsfg_data)
+    cash_data = merge_cash(letsfg_data)
     priced = sum(1 for v in cash_data.values() if v and v.get("price_usd") is not None)
     log.info("Merged cash coverage: %d/%d legs priced across all sources",
              priced, len(cash_data))
