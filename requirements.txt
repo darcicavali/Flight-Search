@@ -7,5 +7,7 @@ gspread==6.1.2
 google-auth==2.32.0
 google-auth-oauthlib==1.2.0
 tenacity==8.5.0
+letsfg==2026.4.63
+airportsdata==20260315
 pytest==8.3.2
 pytest-asyncio==0.23.8
