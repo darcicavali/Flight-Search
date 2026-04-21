@@ -222,7 +222,7 @@ def test_outbound_none_returns_no_outbound_segments(monkeypatch):
         ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
     })
     res = _run([leg])[leg.key]
-    assert res["price_usd"] == 987.5
+    assert res["price_usd"] is None
     assert res["error"] == "no outbound segments"
 
 
@@ -234,7 +234,7 @@ def test_empty_outbound_segments_returns_no_outbound_segments(monkeypatch):
         ("ORD", "GRU", "2026-07-26"): _FakeSearch(offers=[offer]),
     })
     res = _run([leg])[leg.key]
-    assert res["price_usd"] == 987.5
+    assert res["price_usd"] is None
     assert res["error"] == "no outbound segments"
 
 
