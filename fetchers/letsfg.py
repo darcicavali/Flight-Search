@@ -23,7 +23,7 @@ from fetchers.common import empty_leg_result, get_rates, to_usd
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CONCURRENCY = 2
+DEFAULT_CONCURRENCY = 3
 DEFAULT_MAX_BROWSERS = 2
 DEFAULT_LIMIT = 10
 DEFAULT_TIMEOUT_SECONDS = 45

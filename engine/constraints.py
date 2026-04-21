@@ -10,25 +10,28 @@ from typing import List, Optional, Tuple
 
 from engine.routes import Combo
 
+# Airports where an international arrival can hand off to a domestic Brazil
+# leg. Both GRU (São Paulo) and GIG (Rio) serve this role in our routings.
+BRAZIL_GATEWAYS = {"GRU", "GIG"}
+
 
 def _find_gru_intl_to_dom(combo: Combo):
-    """Return (intl_leg, dom_leg, i) if combo routes international→domestic via GRU."""
+    """Return (intl_leg, dom_leg, i) if combo hands off intl→domestic at a
+    Brazil gateway (GRU or GIG)."""
     for i in range(len(combo.legs) - 1):
         a, b = combo.legs[i], combo.legs[i + 1]
-        if a.destination == "GRU" and b.origin == "GRU":
+        if (a.destination in BRAZIL_GATEWAYS
+                and b.origin in BRAZIL_GATEWAYS
+                and a.destination == b.origin):
             return a, b, i
     return None
 
 
 def _is_separate_tickets(combo: Combo) -> bool:
-    """Only true when the GRU intl→domestic handoff crosses a leg boundary.
-    Through-ticket combos fold that handoff into a single PNR.
+    """Only true when the intl→domestic handoff at a Brazil gateway crosses a
+    leg boundary. Through-ticket combos fold that handoff into a single PNR.
     """
-    for i in range(len(combo.legs) - 1):
-        a, b = combo.legs[i], combo.legs[i + 1]
-        if a.destination == "GRU" and b.origin == "GRU":
-            return True
-    return False
+    return _find_gru_intl_to_dom(combo) is not None
 
 
 def apply_constraints(combos: List[Combo], constraints: dict) -> List[Combo]:

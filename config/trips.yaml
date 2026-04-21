@@ -3,9 +3,10 @@ trips:
     name: "Chicago → São Paulo July 2026"
     origin: "ORD"
     final_destination: "GRU"
+    brazil_gateways: ["GRU", "GIG"]
 
     stopovers:
-      candidates: ["ADZ", "CTG", "AUA", "GIG"]
+      candidates: ["ADZ", "CTG", "AUA"]
       min_days: 2
       max_days: 4
 
@@ -14,7 +15,7 @@ trips:
 
     domestic_leg:
       origin: "GRU"
-      destinations: ["NVT", "JOI", "CWB"]
+      destinations: ["NVT", "JOI"]
       airlines: ["LATAM", "GOL", "AZUL"]
 
     travel_window:

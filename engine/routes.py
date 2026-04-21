@@ -45,6 +45,10 @@ def enumerate_routes(config: dict) -> List[Combo]:
     depart_dates = _date_range(window_start, window_end)
 
     final_dest = config["final_destination"]
+    # Brazil entry points for intl→domestic handoff. Direct ORD routes use
+    # final_destination (GRU); Caribbean-stopover routes fan out across all
+    # gateways (GRU and/or GIG), since either one can feed the domestic leg.
+    brazil_gateways = config.get("brazil_gateways") or [final_dest]
     domestic_dests = config["domestic_leg"]["destinations"]
     stopover_candidates = config["stopovers"]["candidates"]
     min_stop = config["stopovers"]["min_days"]
@@ -67,24 +71,25 @@ def enumerate_routes(config: dict) -> List[Combo]:
                     )
                 )
 
-        # Stopover: ORD → stopover → GRU → domestic
+        # Stopover: ORD → stopover → {GRU|GIG} → domestic
         for stopover in stopover_candidates:
             for stop_days in range(min_stop, max_stop + 1):
-                gru_arrival = depart + timedelta(days=stop_days)
-                for dom_dest in domestic_dests:
-                    combos.append(
-                        Combo(
-                            legs=[
-                                Leg("ORD", stopover, depart, 1),
-                                Leg(stopover, final_dest, gru_arrival, 2),
-                                Leg(final_dest, dom_dest,
-                                    gru_arrival + timedelta(days=1), 3),
-                            ],
-                            combo_type="stopover_caribbean",
-                            stopover_city=stopover,
-                            stopover_days=stop_days,
+                gateway_arrival = depart + timedelta(days=stop_days)
+                for gateway in brazil_gateways:
+                    for dom_dest in domestic_dests:
+                        combos.append(
+                            Combo(
+                                legs=[
+                                    Leg("ORD", stopover, depart, 1),
+                                    Leg(stopover, gateway, gateway_arrival, 2),
+                                    Leg(gateway, dom_dest,
+                                        gateway_arrival + timedelta(days=1), 3),
+                                ],
+                                combo_type="stopover_caribbean",
+                                stopover_city=stopover,
+                                stopover_days=stop_days,
+                            )
                         )
-                    )
 
     # Through-ticket combos: let the airline own the intl→domestic connection
     # under a single PNR. Duffel returns the full multi-segment itinerary for
