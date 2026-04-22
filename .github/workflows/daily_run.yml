@@ -1,8 +1,8 @@
 name: Daily Flight Digest
 
-on:
-  schedule:
-    - cron: '0 13 * * *'   # 13:00 UTC ≈ 07:00 CT (adjust for DST twice a year)
+*on:
+*  schedule:
+ *   - cron: '0 13 * * *'   # 13:00 UTC ≈ 07:00 CT (adjust for DST twice a year)
   workflow_dispatch:
 
 jobs:
