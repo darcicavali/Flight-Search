@@ -1,14 +1,21 @@
-"""Local web UI for ad-hoc flight search.
+"""Web UI for ad-hoc flight search — runs locally or on a host like Render.
 
-Run with:
+Local:
     python -m tools.web
+    # opens http://127.0.0.1:8000 in your browser
 
-Opens http://127.0.0.1:8000 in your browser. Add legs (origin, destination,
-date) and submit. Calls the same LetsFG fetcher the daily digest uses and
-renders the cheapest offer per leg, plus totals.
+Hosted (Render etc.):
+    gunicorn tools.web:app --bind 0.0.0.0:$PORT
+    # see render.yaml for the full deploy config
 
-Optional: tick "Include award search" to also call seats.aero (requires
-SEATS_AERO_API_KEY in env or .env file).
+Add legs (origin, destination, date) and submit. Calls the same LetsFG
+fetcher the daily digest uses and renders the cheapest offer per leg.
+
+Env vars honored at startup:
+    LETSFG_BROWSERS       "0" to skip slow browser connectors (default).
+    WEB_USERNAME          basic-auth username (default "user").
+    WEB_PASSWORD          when set, every request requires basic auth.
+    SEATS_AERO_API_KEY    enables the optional award-search checkbox.
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ os.environ.setdefault("LETSFG_BROWSERS", "0")
 import argparse
 import asyncio
 import logging
+import secrets
 import threading
 import time
 import webbrowser
@@ -37,7 +45,7 @@ try:
 except ImportError:
     pass
 
-from flask import Flask, render_template_string, request
+from flask import Flask, Response, render_template_string, request
 
 from engine.routes import Leg
 from fetchers.letsfg import fetch_cash_fares
@@ -47,6 +55,43 @@ from output.airlines import airline_name
 log = logging.getLogger("tools.web")
 
 app = Flask(__name__)
+
+
+# ── HTTP Basic auth for hosted deploys ────────────────────────────────────
+# When WEB_PASSWORD env var is set (only on Render etc.), every request
+# except /healthz prompts the browser for credentials. Username defaults
+# to "user" and can be overridden with WEB_USERNAME.
+def _auth_ok() -> bool:
+    expected_pw = os.environ.get("WEB_PASSWORD") or ""
+    if not expected_pw:
+        return True  # no password configured = open access (local default)
+    expected_user = os.environ.get("WEB_USERNAME", "user")
+    auth = request.authorization
+    if not auth or not auth.password:
+        return False
+    return (
+        secrets.compare_digest(auth.username or "", expected_user)
+        and secrets.compare_digest(auth.password, expected_pw)
+    )
+
+
+@app.before_request
+def _require_auth():
+    if request.path == "/healthz":
+        return None
+    if not _auth_ok():
+        return Response(
+            "Authentication required.\n",
+            status=401,
+            headers={"WWW-Authenticate": 'Basic realm="Flight Search"'},
+        )
+    return None
+
+
+@app.route("/healthz")
+def healthz():
+    """Render's load-balancer pings this to confirm the app is alive."""
+    return "ok", 200, {"Content-Type": "text/plain"}
 
 
 INDEX_HTML = """

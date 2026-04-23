@@ -1,0 +1,33 @@
+# Render blueprint — see https://render.com/docs/blueprint-spec
+# Deploy: in Render dashboard, "New +" → "Blueprint" → pick this repo.
+# Render reads this file and creates the service.
+
+services:
+  - type: web
+    name: flight-search
+    runtime: python
+    plan: free
+    region: oregon
+    branch: claude/flight-search-ranking-a8bt1
+    buildCommand: pip install -r requirements.txt
+    # 1 worker keeps memory usage low (free tier = 512MB).
+    # 2 threads lets two requests be in-flight (rare for personal use).
+    # 180s timeout covers the slowest browser-fallback path.
+    startCommand: gunicorn tools.web:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 180 --access-logfile -
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Skip browser connectors — same setting CI uses.
+      - key: LETSFG_BROWSERS
+        value: "0"
+      # Default username for HTTP Basic auth. Override in Render dashboard if you want.
+      - key: WEB_USERNAME
+        value: "user"
+      # Password — set this in Render dashboard (sync: false means Render
+      # prompts you, value isn't stored in this file).
+      - key: WEB_PASSWORD
+        sync: false
+      # Optional: set in Render dashboard to enable award search via seats.aero.
+      - key: SEATS_AERO_API_KEY
+        sync: false
