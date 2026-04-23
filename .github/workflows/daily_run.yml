@@ -1,8 +1,8 @@
 name: Daily Flight Digest
 
-*on:
-*  schedule:
- *   - cron: '0 13 * * *'   # 13:00 UTC ≈ 07:00 CT (adjust for DST twice a year)
+on:
+  schedule:
+    - cron: '0 13 * * *'   # 13:00 UTC ≈ 07:00 CT (adjust for DST twice a year)
   workflow_dispatch:
 
 jobs:
@@ -26,18 +26,20 @@ jobs:
       - name: Install Playwright browsers (required by LetsFG)
         run: python -m playwright install --with-deps chromium
 
-      - name: Install Xvfb (LetsFG launches headed Chrome for some connectors)
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-
       - name: Run flight search
         env:
+          # Skip LetsFG's browser-based connectors — they take 20–60s each on
+          # GH runners (headed Chrome, slow renders, bot checks) and rarely
+          # add unique offers. API-only connectors (Kiwi aggregator + direct
+          # airline APIs) give us full coverage in seconds per leg.
+          LETSFG_BROWSERS: "0"
           SEATS_AERO_API_KEY: ${{ secrets.SEATS_AERO_API_KEY }}
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
-        run: xvfb-run --auto-servernum python main.py --trip chicago_sao_paulo_jul2026
+        run: python main.py --trip chicago_sao_paulo_jul2026
 
       - name: Commit price history snapshot
         run: |
