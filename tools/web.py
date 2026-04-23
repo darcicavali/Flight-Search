@@ -13,10 +13,16 @@ SEATS_AERO_API_KEY in env or .env file).
 
 from __future__ import annotations
 
+import os
+
+# Skip LetsFG's browser-based connectors by default — they take 20–60s each,
+# depend on a working Chrome/Xvfb, and rarely add unique offers. Users who
+# want them can set LETSFG_BROWSERS=1 before launching.
+os.environ.setdefault("LETSFG_BROWSERS", "0")
+
 import argparse
 import asyncio
 import logging
-import os
 import threading
 import time
 import webbrowser
