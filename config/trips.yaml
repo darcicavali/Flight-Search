@@ -15,7 +15,7 @@ trips:
 
     domestic_leg:
       origin: "GRU"
-      destinations: ["NVT", "JOI"]
+      destinations: ["NVT", "JOI", "FLN"]
       airlines: ["LATAM", "GOL", "AZUL"]
 
     travel_window:

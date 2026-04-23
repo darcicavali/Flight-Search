@@ -11,3 +11,4 @@ letsfg==2026.4.63
 airportsdata==20260315
 pytest==8.3.2
 pytest-asyncio==0.23.8
+flask==3.0.3
