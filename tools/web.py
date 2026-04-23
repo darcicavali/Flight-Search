@@ -177,6 +177,8 @@ RESULTS_HTML = """
     .awards { margin-top: .4rem; }
     .award { display: inline-block; background: #dafbe1; color: var(--green);
              border-radius: 4px; padding: 2px 6px; margin: 2px 4px 2px 0; font-size: .8rem; }
+    .note { display: inline-block; background: #fff8c5; color: #6f5500;
+            border-radius: 4px; padding: 1px 5px; margin-left: .35rem; font-size: .72rem; }
     .segs { color: #656d76; font-size: .82rem; margin-top: .25rem; }
   </style>
 </head>
@@ -202,6 +204,7 @@ RESULTS_HTML = """
       <tr>
         <td>{{ loop.index }}</td>
         <td><strong>{{ row.origin }} → {{ row.destination }}</strong>
+            {% if row.source_note %}<span class="note">{{ row.source_note }}</span>{% endif %}
             {% if row.layovers %}<span class="muted">via {{ row.layovers|join(', ') }}</span>{% endif %}
             {% if row.awards %}
               <div class="awards">
@@ -279,8 +282,73 @@ def _format_duration_total(hours_sum: float) -> str:
     return f"{h}h{m:02d}m"
 
 
+def _failed_legs(cash: dict, legs: List[Leg]) -> List[Leg]:
+    """Legs that returned no priced offer in the most recent fetch."""
+    return [
+        leg for leg in legs
+        if (cash.get(leg.key) or {}).get("price_usd") is None
+    ]
+
+
+async def _retry_failed(legs: List[Leg], cash: dict, session: aiohttp.ClientSession,
+                        delay_sec: float = 3.0) -> int:
+    """Retry empty legs once after a short delay. Mutates `cash` in place."""
+    failed = _failed_legs(cash, legs)
+    if not failed:
+        return 0
+    log.info("retry: %d empty legs after %.1fs delay", len(failed), delay_sec)
+    await asyncio.sleep(delay_sec)
+    retry = await fetch_cash_fares(failed, {}, session=session)
+    recovered = 0
+    for leg in failed:
+        new_row = retry.get(leg.key) or {}
+        if new_row.get("price_usd") is not None:
+            new_row["source_note"] = "retry"
+            cash[leg.key] = new_row
+            recovered += 1
+    return recovered
+
+
+async def _browser_fallback(legs: List[Leg], cash: dict,
+                            session: aiohttp.ClientSession) -> int:
+    """For legs still without a price, re-run with browser connectors enabled.
+
+    Patches letsfg's cached _BROWSERS_AVAILABLE flag on for the duration of
+    the call, then restores it. ~3–5x slower per leg but covers routes the
+    API-only pool misses (smaller domestic carriers, specific OTAs).
+    """
+    failed = _failed_legs(cash, legs)
+    if not failed:
+        return 0
+    from letsfg.connectors import engine as _eng
+    if _eng._BROWSERS_AVAILABLE:
+        return 0  # browsers already on, nothing to escalate to
+    log.info("browser-fallback: %d legs still empty, escalating to full mode", len(failed))
+    fallback_cfg = {
+        "fetchers": {"letsfg": {
+            "mode": None,            # full connector set
+            "timeout_sec": 90,       # browsers need more time
+            "concurrency": 1,        # one at a time to avoid resource thrash
+            "max_browsers": 2,
+        }}
+    }
+    _eng._BROWSERS_AVAILABLE = True
+    try:
+        result = await fetch_cash_fares(failed, fallback_cfg, session=session)
+    finally:
+        _eng._BROWSERS_AVAILABLE = False
+    recovered = 0
+    for leg in failed:
+        new_row = result.get(leg.key) or {}
+        if new_row.get("price_usd") is not None:
+            new_row["source_note"] = "full mode"
+            cash[leg.key] = new_row
+            recovered += 1
+    return recovered
+
+
 async def _run_search(legs: List[Leg], include_award: bool) -> dict:
-    """Fetch cash (+ optional award) for each leg. Returns {leg.key: merged}."""
+    """Fetch cash (+ optional award) for each leg, with retry + browser fallback."""
     async with aiohttp.ClientSession() as session:
         cash_task = fetch_cash_fares(legs, {}, session=session)
         if include_award:
@@ -289,6 +357,10 @@ async def _run_search(legs: List[Leg], include_award: bool) -> dict:
         else:
             cash = await cash_task
             award = {}
+
+        # Empty-result recovery: cheap retry, then expensive browser fallback.
+        await _retry_failed(legs, cash, session)
+        await _browser_fallback(legs, cash, session)
 
     merged = {}
     for leg in legs:
@@ -349,6 +421,7 @@ def search():
             "flight_nos": _segments_summary(r.get("segments") or []),
             "booking_url": r.get("booking_url"),
             "awards": r.get("awards") or {},
+            "source_note": r.get("source_note"),
             "error": r.get("error"),
         }
         rows.append(row)
