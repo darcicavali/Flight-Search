@@ -1,6 +1,7 @@
 trips:
   chicago_sao_paulo_jul2026:
     name: "Chicago → São Paulo July 2026"
+    enabled: true
     origin: "ORD"
     final_destination: "GRU"
     brazil_gateways: ["GRU", "GIG"]
@@ -57,6 +58,7 @@ trips:
   # verify the pipeline end-to-end before dispatching the full trip.
   chicago_sao_paulo_smoke:
     name: "SMOKE — Chicago → São Paulo (1 date)"
+    enabled: false   # manual dispatch only — not included in daily email
     origin: "ORD"
     final_destination: "GRU"
     brazil_gateways: ["GRU", "GIG"]

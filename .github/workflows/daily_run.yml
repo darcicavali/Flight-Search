@@ -8,11 +8,12 @@ on:
   workflow_dispatch:
     inputs:
       trip:
-        description: "Trip key from config/trips.yaml"
+        description: "Which trip to run. 'all' = every trip with enabled:true in trips.yaml (matches the scheduled behavior). Pick a specific key to run just that trip."
         required: true
-        default: "chicago_sao_paulo_jul2026"
+        default: "all"
         type: choice
         options:
+          - all
           - chicago_sao_paulo_smoke
           - chicago_sao_paulo_jul2026
 
@@ -50,7 +51,15 @@ jobs:
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
-        run: python main.py --trip "${{ github.event.inputs.trip || 'chicago_sao_paulo_jul2026' }}"
+        # Scheduled runs and dispatch-with-"all" both run every enabled trip.
+        # Dispatch with a specific trip name runs just that one.
+        run: |
+          TRIP="${{ github.event.inputs.trip }}"
+          if [ -z "$TRIP" ] || [ "$TRIP" = "all" ]; then
+            python main.py
+          else
+            python main.py --trip "$TRIP"
+          fi
 
       - name: Commit price history snapshot
         run: |

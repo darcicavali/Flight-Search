@@ -1,4 +1,11 @@
-"""Flight digest orchestrator — entry point for daily runs and manual testing."""
+"""Flight digest orchestrator — entry point for daily runs and manual testing.
+
+Runs one or more trips defined in config/trips.yaml. If --trip is given,
+only that trip runs; otherwise every trip with enabled != false runs and the
+digests are combined into a single email.
+
+See docs/ADDING_A_TRIP.md for how to add new trips.
+"""
 
 import argparse
 import asyncio
@@ -6,7 +13,7 @@ import logging
 import os
 import sys
 from datetime import date
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import aiohttp
 import yaml
@@ -88,17 +95,23 @@ def _assemble_legs(
     return merged
 
 
-async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
+async def build_trip_digest(trip_name: str, config: dict,
+                            prev_day_data: Optional[dict] = None) -> dict:
+    """Fetch + score a single trip, return text/html digest + scored combos.
+
+    Does not send email or write to Sheets — those are orchestrated by the
+    caller so multi-trip runs produce a single combined email.
+    """
     log.info("Running flight search for: %s", trip_name)
 
     combos = enumerate_routes(config)
-    log.info("Generated %d route combinations", len(combos))
+    log.info("[%s] Generated %d route combinations", trip_name, len(combos))
 
     combos = apply_constraints(combos, config.get("constraints", {}))
-    log.info("%d combos after constraint filtering", len(combos))
+    log.info("[%s] %d combos after constraint filtering", trip_name, len(combos))
 
     unique_legs = deduplicate_legs(combos)
-    log.info("Fetching fares for %d unique legs", len(unique_legs))
+    log.info("[%s] Fetching fares for %d unique legs", trip_name, len(unique_legs))
 
     async with aiohttp.ClientSession() as session:
         letsfg_data, award_data, domestic_award_data = await asyncio.gather(
@@ -107,14 +120,13 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
             fetch_smiles_domestic(unique_legs, config, session=session),
         )
 
-    _log_fetcher_summary("letsfg", letsfg_data)
-    _log_fetcher_summary("seats_aero", award_data, is_award=True)
-    _log_fetcher_summary("smiles", domestic_award_data, is_award=True)
+    _log_fetcher_summary(f"{trip_name}:letsfg", letsfg_data)
+    _log_fetcher_summary(f"{trip_name}:seats_aero", award_data, is_award=True)
+    _log_fetcher_summary(f"{trip_name}:smiles", domestic_award_data, is_award=True)
 
     cash_data = merge_cash(letsfg_data)
     priced = sum(1 for v in cash_data.values() if v and v.get("price_usd") is not None)
-    log.info("Merged cash coverage: %d/%d legs priced across all sources",
-             priced, len(cash_data))
+    log.info("[%s] Merged cash coverage: %d/%d legs priced", trip_name, priced, len(cash_data))
 
     scored = []
     skipped = 0
@@ -125,7 +137,8 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
             continue
         scored.append(score_combo(combo, legs_data, config))
 
-    log.info("Scored %d combos (%d skipped: missing leg fares)", len(scored), skipped)
+    log.info("[%s] Scored %d combos (%d skipped: missing leg fares)",
+             trip_name, len(scored), skipped)
 
     constraints_cfg = config.get("constraints", {})
     max_travel = float(constraints_cfg.get("max_total_travel_hours", 36))
@@ -137,37 +150,123 @@ async def run_trip(trip_name: str, config: dict, dry_run: bool = False) -> int:
     scored = prune_short_gru_connections(scored, min_gru_conn)
     scored.sort(key=lambda x: x.score)
     log.info(
-        "Post-fetch filtering: %d→%d (travel-time), %d→%d (GRU connection)",
-        before_travel, before_conn, before_conn, len(scored),
+        "[%s] Post-fetch filtering: %d→%d (travel-time), %d→%d (GRU connection)",
+        trip_name, before_travel, before_conn, before_conn, len(scored),
     )
 
-    prev_day = load_previous_day()
-    digest = format_digest(scored, date.today(), config, prev_day_data=prev_day)
-    digest_html = format_digest_html(scored, date.today(), config, prev_day_data=prev_day)
+    text = format_digest(scored, date.today(), config, prev_day_data=prev_day_data)
+    html = format_digest_html(scored, date.today(), config, prev_day_data=prev_day_data)
+
+    return {
+        "name": trip_name,
+        "display_name": config.get("name", trip_name),
+        "text": text,
+        "html": html,
+        "scored": scored,
+        "config": config,
+        "combo_count": len(scored),
+    }
+
+
+def _combine_digests(digests: List[dict]) -> tuple:
+    """Stitch per-trip text + HTML digests into one email body.
+
+    For one trip, returns that digest unchanged. For multiple trips, prepends
+    a short trip-count summary and separates each trip's block visually.
+    """
+    if len(digests) == 1:
+        return digests[0]["text"], digests[0]["html"]
+
+    # Text: horizontal rule + display name + body, repeated per trip
+    divider = "\n\n" + ("=" * 60) + "\n\n"
+    text_blocks = [
+        f"### {d['display_name']} ({d['combo_count']} ranked combos) ###\n\n{d['text']}"
+        for d in digests
+    ]
+    header = (f"Flight Digest — {date.today().isoformat()} · "
+              f"{len(digests)} trips\n\n")
+    text = header + divider.join(text_blocks)
+
+    # HTML: each digest is a standalone <div>, stack them with a visible divider
+    html_header = (
+        f'<div style="max-width:720px;margin:20px auto;font-family:sans-serif;'
+        f'color:#1f2328;padding:0 16px;">'
+        f'<h1 style="font-size:22px;margin:0 0 12px 0;">✈ Flight Digest — '
+        f'{date.today().strftime("%a %b %d, %Y")} · {len(digests)} trips</h1></div>'
+    )
+    html_blocks = [
+        f'<div style="max-width:720px;margin:0 auto 24px;padding:0 16px;">'
+        f'<h2 style="font-size:18px;color:#0969da;margin:24px 0 8px;'
+        f'border-top:2px solid #d0d7de;padding-top:16px;">'
+        f'▸ {d["display_name"]}</h2></div>{d["html"]}'
+        for d in digests
+    ]
+    html = html_header + "".join(html_blocks)
+    return text, html
+
+
+def _select_trips(all_cfg: dict, specific: Optional[str]) -> List[tuple]:
+    """Decide which trips to run. Returns [(name, cfg), ...].
+
+    If `specific` is given, only that trip (regardless of enabled flag).
+    Otherwise every trip where enabled != false. `enabled` defaults to True
+    when the key is absent.
+    """
+    trips = all_cfg.get("trips") or {}
+    if specific:
+        if specific not in trips:
+            raise KeyError(
+                f"Unknown trip '{specific}'. Available: {list(trips.keys())}"
+            )
+        return [(specific, trips[specific])]
+    return [(k, v) for k, v in trips.items() if v.get("enabled", True)]
+
+
+async def run_all(trips: List[tuple], dry_run: bool) -> int:
+    """Fetch every selected trip, combine their digests, send one email."""
+    prev_day = load_previous_day()  # shared across trips (combo IDs don't collide)
+    digests = []
+    for name, cfg in trips:
+        digests.append(await build_trip_digest(name, cfg, prev_day_data=prev_day))
+
+    text, html = _combine_digests(digests)
+    subject = (
+        f"Flight Digest — {date.today().isoformat()}"
+        if len(digests) == 1
+        else f"Flight Digest — {len(digests)} trips · {date.today().isoformat()}"
+    )
 
     if dry_run:
-        print(digest)
+        print(text)
     else:
+        # Recipient: env var wins; per-trip notify.email is a fallback using
+        # the first digest's config (assumes same user gets all trips).
         recipient = (
             os.environ.get("RECIPIENT_EMAIL")
-            or config.get("notify", {}).get("email")
+            or (digests[0]["config"].get("notify") or {}).get("email")
             or ""
         )
-        sent = send_email(digest, recipient, html=digest_html)
+        sent = send_email(text, recipient, subject=subject, html=html)
         if not sent:
             print("\n[email not sent — falling back to stdout]\n")
-            print(digest)
+            print(text)
 
-    append_to_sheets(scored, config)
-    log.info("Done. (%d combos ranked)", len(scored))
-    # Exit 0 even with zero scored combos — the digest was produced/delivered.
-    # Empty results are a data-coverage signal, not a pipeline failure.
+    # Write price-history snapshot per trip (Google Sheets + local JSON).
+    for d in digests:
+        append_to_sheets(d["scored"], d["config"])
+
+    total = sum(d["combo_count"] for d in digests)
+    log.info("Done. %d trip(s), %d combos total ranked.", len(digests), total)
     return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description="Flight digest runner")
-    parser.add_argument("--trip", required=True, help="trip key in config/trips.yaml")
+    parser.add_argument(
+        "--trip",
+        help="Run just one trip (key in config/trips.yaml). "
+        "Omit to run every enabled trip.",
+    )
     parser.add_argument("--dry-run", action="store_true",
                         help="print digest instead of sending email")
     parser.add_argument("--config", default="config/trips.yaml")
@@ -175,13 +274,20 @@ def main():
 
     with open(args.config) as f:
         all_cfg = yaml.safe_load(f)
-    if args.trip not in all_cfg["trips"]:
-        log.error("Unknown trip '%s'. Available: %s",
-                  args.trip, list(all_cfg["trips"].keys()))
+
+    try:
+        trips = _select_trips(all_cfg, args.trip)
+    except KeyError as e:
+        log.error(str(e))
         sys.exit(1)
 
-    trip_cfg = all_cfg["trips"][args.trip]
-    exit_code = asyncio.run(run_trip(args.trip, trip_cfg, dry_run=args.dry_run))
+    if not trips:
+        log.error("No enabled trips to run. Add 'enabled: true' to at least one "
+                  "trip in %s, or pass --trip explicitly.", args.config)
+        sys.exit(1)
+
+    log.info("Will run %d trip(s): %s", len(trips), [t[0] for t in trips])
+    exit_code = asyncio.run(run_all(trips, dry_run=args.dry_run))
     sys.exit(exit_code)
 
 
