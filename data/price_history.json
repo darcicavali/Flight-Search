@@ -5539,5 +5539,55 @@
         "rank": 99
       }
     ]
+  },
+  {
+    "date": "2026-04-24",
+    "combos": [
+      {
+        "combo_id": "ORD-NVT-2026-07-26",
+        "route": "ORD \u2192 NVT",
+        "total_cash_usd": 564.38,
+        "best_points_option": null,
+        "total_travel_hours": 33.33,
+        "verdict": "CASH WINS",
+        "rank": 1
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GRU-2026-07-29|GRU-NVT-2026-07-30",
+        "route": "ORD \u2192 CTG \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 860.0,
+        "best_points_option": null,
+        "total_travel_hours": 22.54,
+        "verdict": "CASH WINS",
+        "rank": 2
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-NVT-2026-07-29",
+        "route": "ORD \u2192 CTG \u2192 NVT",
+        "total_cash_usd": 780.0,
+        "best_points_option": null,
+        "total_travel_hours": 30.87,
+        "verdict": "CASH WINS",
+        "rank": 3
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-NVT-2026-07-28",
+        "route": "ORD \u2192 CTG \u2192 NVT",
+        "total_cash_usd": 779.0,
+        "best_points_option": null,
+        "total_travel_hours": 31.87,
+        "verdict": "CASH WINS",
+        "rank": 4
+      },
+      {
+        "combo_id": "ORD-CTG-2026-07-26|CTG-GIG-2026-07-29|GIG-NVT-2026-07-30",
+        "route": "ORD \u2192 CTG \u2192 GIG \u2192 NVT",
+        "total_cash_usd": 932.0,
+        "best_points_option": null,
+        "total_travel_hours": 28.03,
+        "verdict": "CASH WINS",
+        "rank": 5
+      }
+    ]
   }
 ]
