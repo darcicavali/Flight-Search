@@ -544,15 +544,15 @@ async def _run_search(legs: List[Leg], include_award: bool) -> dict:
     Returns {'offers_by_leg': {key: [offer, ...]}, 'awards': {key: {...}},
              'source_notes': {key: 'retry'|'full mode'}}.
     """
-    # mode=None uses all ~88 non-browser connectors (not just fast-mode's 25),
-    # which brings in Air Canada, Delta, Copa, LATAM direct etc. Counter-
-    # intuitively this is often faster than fast mode because the expanded
-    # connector pool has less contention in the engine's scheduler.
-    # limit=50 is LetsFG's default; enough for long-haul routes where Copa/
-    # AC/premium carriers would otherwise get truncated after the cheapest
-    # 20-25 OTA offers.
+    # mode=fast (~25 curated connectors) keeps the per-leg memory footprint
+    # small enough to fit Render's 512MB free tier. mode=None was attempted
+    # for broader coverage but OOM-killed the worker: too many heavy
+    # connectors instantiate (including some that import Playwright even
+    # though they get filtered out later). Fast mode still covers AA, AC,
+    # AV, CM, DL, G3, LA, UA per local testing — with limit=50 we surface
+    # those alongside the cheap OTA offers.
     base_cfg = {"fetchers": {"letsfg": {
-        "concurrency": 1, "mode": None, "limit": 50,
+        "concurrency": 1, "mode": "fast", "limit": 50,
     }}}
     source_notes: dict = {}
     offers_by_leg: dict = {}
