@@ -40,10 +40,9 @@ def test_format_digest_contains_key_sections():
     scored = [_sample_scored()]
     out = format_digest(scored, date(2026, 4, 19), CONFIG)
     assert "FLIGHT DIGEST" in out
-    # Full Ranking is the canonical "best combos" view; "Best Cash Combo"
-    # was dropped because it was always the same as rank #1.
+    # Full Ranking is the canonical "best trips end-to-end" view; we dropped
+    # the redundant Best Cash/Direct/Single-Ticket/Stopover sections.
     assert "FULL RANKING" in out
-    assert "BEST DIRECT" in out
     assert "AWARD SPACE ALERTS" in out
 
 
@@ -54,28 +53,22 @@ def test_format_digest_handles_empty():
 
 def test_html_digest_contains_sections_and_hides_urls_in_text():
     scored = [_sample_scored()]
-    html = format_digest_html(scored, date(2026, 4, 19), CONFIG)
+    # Booking URLs now live in the per-leg section, not in combo cards.
+    per_leg_offers = {
+        "ORD-GRU-2026-07-26": [{
+            "origin": "ORD", "destination": "GRU", "date": "2026-07-26",
+            "price_usd": 750, "airline": "UA", "duration_str": "10h00m",
+            "duration_hours": 10, "stops": 0,
+            "segments": [{"carrier": "UA", "flight_no": "UA823"}],
+            "booking_url": "https://ua.com/x",
+        }],
+    }
+    html = format_digest_html(scored, date(2026, 4, 19), CONFIG,
+                              per_leg_offers=per_leg_offers)
     assert "Full Ranking" in html
-    assert "Best Direct" in html
-    # Booking URL should live inside an <a href="…"> not as visible text
+    # Booking URL appears as a hyperlink in the per-leg section
     assert 'href="https://ua.com/x"' in html
-    assert ">Book leg 1</a>" in html
-
-
-def test_codeshare_carrier_rendered_with_operator():
-    combo = Combo(legs=[Leg("ORD", "GRU", date(2026, 7, 26), 1)], combo_type="direct")
-    legs_data = [{
-        "origin": "ORD", "destination": "GRU", "date": "2026-07-26",
-        "price_usd": 750, "airline": "BA", "operated_by": "UA",
-        "duration_hours": 10, "duration_str": "10h00m",
-        "awards": {}, "booking_url": "https://example.com/x",
-        "segments": [{"carrier": "BA", "flight_no": "0117"}],
-    }]
-    sc = score_combo(combo, legs_data, CONFIG)
-    text_out = format_digest([sc], date(2026, 4, 19), CONFIG)
-    html_out = format_digest_html([sc], date(2026, 4, 19), CONFIG)
-    assert "British Airways (op. by United" in text_out
-    assert "British Airways (op. by United" in html_out
+    assert ">Book</a>" in html
 
 
 def test_per_leg_alternatives_renders_per_route_top_5():
@@ -105,13 +98,21 @@ def test_per_leg_alternatives_renders_per_route_top_5():
     text = format_digest(scored, date(2026, 4, 19), CONFIG,
                          per_leg_offers=per_leg_offers)
     # Section header rendered
-    assert "Top alternatives per route" in html
-    assert "TOP ALTERNATIVES PER ROUTE" in text
-    # Both ORD→GRU offers appear, sorted cheapest-first
+    assert "Top options per leg" in html
+    assert "TOP OPTIONS PER LEG" in text
+    # Both ORD→GRU offers appear, sorted cheapest-first by price+time blend
     assert "ORD → GRU" in html
     assert html.find("750") < html.find("820")
     # GRU→NVT also appears
     assert "GRU → NVT" in html
+
+
+def test_offer_sort_blends_price_and_duration():
+    """A 13h shorter flight for $6 more should outrank a cheap long slog."""
+    from output.digest import _offer_sort_key
+    cheap_long = {"price_usd": 238, "duration_hours": 28.77}
+    pricey_short = {"price_usd": 244, "duration_hours": 15.6}
+    assert _offer_sort_key(pricey_short) < _offer_sort_key(cheap_long)
 
 
 def test_non_codeshare_does_not_annotate():

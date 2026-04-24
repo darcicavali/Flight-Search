@@ -260,7 +260,7 @@ def format_digest(
 
     per_leg_block = (
         "──────────────────────────────────────────────────────────────\n"
-        "🛫 TOP ALTERNATIVES PER ROUTE (cheapest 2 · click route URL for more)\n"
+        "🛫 TOP OPTIONS PER LEG (cheapest 5 per origin → destination)\n"
         f"{_format_per_leg_alternatives_text(per_leg_offers, trip_config)}"
         if per_leg_offers else ""
     )
@@ -276,17 +276,9 @@ def format_digest(
     return (
         f"{header}\n"
         f"{per_leg_block}"
-        "──────────────────────────────────────────────────────────────\n"
-        "✈  BEST DIRECT (no stopover)\n"
-        f"{direct_block}\n"
-        "🎫 BEST SINGLE-TICKET (ORD → final dest on one PNR)\n"
-        f"{through_block}\n"
-        "──────────────────────────────────────────────────────────────\n"
-        "🏝  BEST STOPOVER OPTIONS  (cheapest combo via each Caribbean city)\n"
-        f"{stopover_block}\n"
         f"{points_section}"
         "──────────────────────────────────────────────────────────────\n"
-        f"FULL RANKING (top 10 of {len(ranked_combos)} scored combinations)\n\n"
+        f"🏆 FULL RANKING (top 10 of {len(ranked_combos)} scored end-to-end trips)\n\n"
         f"{top_rows}\n"
         "──────────────────────────────────────────────────────────────\n"
         "AWARD SPACE ALERTS\n"
@@ -558,14 +550,25 @@ def _route_stage(origin: str, dest: str, trip_config: dict) -> tuple:
     return (stage, origin, dest)
 
 
+def _offer_sort_key(o: dict, time_value_per_hour: float = 8.0) -> float:
+    """Blend price and duration so a 13-hour shorter flight for $6 more wins.
+
+    Effectively values each flight hour at ~$8 USD. Tuned so that at realistic
+    fares ($200–$1000), duration differences of 4+ hours dominate price
+    differences under ~$50, but price still matters when durations are close.
+    """
+    price = o.get("price_usd") or float("inf")
+    hours = o.get("duration_hours") or 0
+    return price + time_value_per_hour * hours
+
+
 def _group_offers_by_route(per_leg_offers: dict, trip_config: Optional[dict] = None,
-                           top_per_pair: int = 3) -> list:
+                           top_per_pair: int = 5) -> list:
     """Collapse per-leg offers into one entry per (origin, dest) pair.
 
-    Each entry: ((origin, dest), top_offers, extra_count). Offers sorted
-    cheapest-first; extra_count tells the renderer how many more were trimmed.
-    Pairs sorted trip-logically when trip_config is provided, otherwise by
-    cheapest-first price.
+    Each entry: ((origin, dest), top_offers, extra_count). Offers sorted by a
+    blended price+duration score; extra_count tells the renderer how many more
+    were trimmed. Pairs sorted trip-logically when trip_config is provided.
     """
     by_pair: dict = {}
     for leg_key, offers in (per_leg_offers or {}).items():
@@ -577,8 +580,7 @@ def _group_offers_by_route(per_leg_offers: dict, trip_config: Optional[dict] = N
 
     result = []
     for pair, offers in by_pair.items():
-        offers.sort(key=lambda x: (x.get("price_usd") or float("inf"),
-                                   x.get("duration_hours") or float("inf")))
+        offers.sort(key=_offer_sort_key)
         top = offers[:top_per_pair]
         extra = len(offers) - len(top)
         result.append((pair, top, extra))
@@ -586,8 +588,7 @@ def _group_offers_by_route(per_leg_offers: dict, trip_config: Optional[dict] = N
     if trip_config:
         result.sort(key=lambda kv: _route_stage(kv[0][0], kv[0][1], trip_config))
     else:
-        result.sort(key=lambda kv: (kv[1][0].get("price_usd") or float("inf"))
-                                    if kv[1] else float("inf"))
+        result.sort(key=lambda kv: _offer_sort_key(kv[1][0]) if kv[1] else float("inf"))
     return result
 
 
@@ -603,85 +604,80 @@ def _google_flights_url(origin: str, dest: str, sample_date: str) -> str:
     return f"https://www.google.com/travel/flights?q={q}"
 
 
+def _render_offer_row(o: dict, is_cheapest: bool = False) -> str:
+    """Compact per-leg offer row (minimal inline styles)."""
+    airlines = _esc(_airlines_label(o.get("segments") or [], o.get("airline") or ""))
+    stops_n = o.get("stops") or 0
+    if stops_n == 0:
+        stops_bit = '<span style="color:#1a7f37">nonstop</span>'
+    else:
+        plural = "" if stops_n == 1 else "s"
+        via = (f' <span style="color:#888">via {_esc(", ".join(o["layovers"]))}</span>'
+               if o.get("layovers") else "")
+        stops_bit = f'{stops_n} stop{plural}{via}'
+    times = ""
+    if o.get("depart_time") or o.get("arrive_time"):
+        times = (f' <span style="color:#888">'
+                 f'{_esc(o.get("depart_time") or "?")}→{_esc(o.get("arrive_time") or "?")}'
+                 f'</span>')
+    book = (
+        f'<a href="{_esc(o["booking_url"])}" style="color:#06c">Book</a>'
+        if o.get("booking_url") else ""
+    )
+    star = "⭐" if is_cheapest else ""
+    return (
+        f'<tr>'
+        f'<td>{star}{_esc(o.get("date") or "")}</td>'
+        f'<td>{airlines}</td>'
+        f'<td>{stops_bit}{times}</td>'
+        f'<td>{_esc(o.get("duration_str") or "—")}</td>'
+        f'<td align=right><b>${o["price_usd"]:,.0f}</b></td>'
+        f'<td>{book}</td>'
+        f'</tr>'
+    )
+
+
 def _html_per_leg_alternatives(per_leg_offers: dict,
                                trip_config: Optional[dict] = None) -> str:
-    """Render top N offers for each (origin, dest) pair as small tables."""
-    # top_per_pair=2 keeps the email under Gmail's ~102KB clip threshold for a
-    # 20+ route trip while still letting the user compare cheapest vs a second
-    # option (e.g. fastest carrier vs lowest price). The Google Flights link
-    # per route covers the rest.
-    grouped = _group_offers_by_route(per_leg_offers, trip_config, top_per_pair=2)
+    """Render per-route sections: top 3 rows each.
+
+    Tried <details>/top 5 earlier — real-trip HTML ballooned to 198KB
+    (Gmail clip is ~102KB). Going back to a single compact table per route
+    with top 3 rows, a count of total options, and a Google Flights link for
+    the rest. This projects to ~90KB on the full trip.
+    """
+    grouped = _group_offers_by_route(per_leg_offers, trip_config, top_per_pair=3)
     if not grouped:
         return '<p style="color:#666;">(no priced offers available)</p>'
 
+    head = (
+        '<tr style="background:#f6f8fa;color:#656d76;font-size:11px;text-align:left">'
+        '<th>Date</th><th>Airline(s)</th><th>Stops · Times</th>'
+        '<th>Duration</th><th align=right>Price</th><th></th>'
+        '</tr>'
+    )
+
     sections = []
     for (origin, dest), offers, extra in grouped:
-        rows = []
-        for o in offers:
-            airlines = _esc(_airlines_label(o.get("segments") or [],
-                                            o.get("airline") or ""))
-            flights = _esc(_flight_nos(o.get("segments") or [])) or "—"
-            stops_n = o.get("stops") or 0
-            stops_html = (
-                '<span style="color:#1a7f37;">nonstop</span>'
-                if stops_n == 0 else
-                f'{stops_n} stop{"" if stops_n == 1 else "s"}'
-            )
-            if o.get("layovers"):
-                stops_html += (f'<br><span style="color:#666;font-size:11px;">via '
-                               f'{_esc(", ".join(o["layovers"]))}</span>')
-            times = ""
-            if o.get("depart_time") or o.get("arrive_time"):
-                times = (f'{_esc(o.get("depart_time") or "?")} → '
-                         f'{_esc(o.get("arrive_time") or "?")}')
-            book = (
-                f'<a href="{_esc(o["booking_url"])}" '
-                f'style="{_CSS["btn"]};font-size:11px;padding:3px 8px;">Book</a>'
-                if o.get("booking_url") else ""
-            )
-            rows.append(
-                f'<tr>'
-                f'<td style="{_CSS["rank_td"]};">{_esc(o.get("date") or "")}</td>'
-                f'<td style="{_CSS["rank_td"]};">{airlines}</td>'
-                f'<td style="{_CSS["rank_td"]};font-size:11px;color:#666;">{flights}</td>'
-                f'<td style="{_CSS["rank_td"]};">{stops_html}</td>'
-                f'<td style="{_CSS["rank_td"]};font-size:11px;color:#666;">{times}</td>'
-                f'<td style="{_CSS["rank_td"]};">{_esc(o.get("duration_str") or "—")}</td>'
-                f'<td style="{_CSS["rank_td"]};text-align:right;font-weight:600;">'
-                f'${o["price_usd"]:,.0f}</td>'
-                f'<td style="{_CSS["rank_td"]};">{book}</td>'
-                f'</tr>'
-            )
-        sample_date = offers[0].get("date") or ""
+        rows = "".join(
+            _render_offer_row(o, is_cheapest=(i == 0))
+            for i, o in enumerate(offers)
+        )
+        sample_date = offers[0].get("date") or "" if offers else ""
         gf_link = (
             f' · <a href="{_esc(_google_flights_url(origin, dest, sample_date))}" '
-            f'style="color:#0969da;text-decoration:none;font-size:12px;" '
-            f'target="_blank">see all on Google Flights ↗</a>'
-            if extra else ''
-        )
-        extra_line = (
-            f'<p style="color:#666;font-size:11px;margin:2px 0 10px 0;">'
-            f'+ {extra} more option{"" if extra == 1 else "s"} not shown</p>'
-            if extra else ''
+            f'style="color:#06c;text-decoration:none" target="_blank">'
+            f'see all {len(offers) + extra} on Google Flights ↗</a>'
+            if extra else ""
         )
         sections.append(
-            f'<h3 style="font-size:14px;margin:14px 0 4px 0;">'
-            f'{_esc(origin)} → {_esc(dest)} '
-            f'<span style="font-weight:normal;color:#666;font-size:12px;">'
-            f'(top {len(offers)}'
-            f'{" of " + str(len(offers) + extra) if extra else ""})</span>'
+            f'<div style="margin:14px 0">'
+            f'<h3 style="font-size:14px;margin:0 0 4px">'
+            f'{_esc(origin)} → {_esc(dest)}'
             f'{gf_link}</h3>'
-            f'<table style="{_CSS["rank_tbl"]}"><thead><tr>'
-            f'<th style="{_CSS["rank_th"]}">Date</th>'
-            f'<th style="{_CSS["rank_th"]}">Airline</th>'
-            f'<th style="{_CSS["rank_th"]}">Flight</th>'
-            f'<th style="{_CSS["rank_th"]}">Stops</th>'
-            f'<th style="{_CSS["rank_th"]}">Times</th>'
-            f'<th style="{_CSS["rank_th"]}">Duration</th>'
-            f'<th style="{_CSS["rank_th"]};text-align:right;">Price</th>'
-            f'<th style="{_CSS["rank_th"]}"></th>'
-            f'</tr></thead><tbody>{"".join(rows)}</tbody></table>'
-            f'{extra_line}'
+            f'<table style="width:100%;border-collapse:collapse;font-size:13px" '
+            f'cellpadding="4">{head}{rows}</table>'
+            f'</div>'
         )
     return "".join(sections)
 
@@ -689,7 +685,7 @@ def _html_per_leg_alternatives(per_leg_offers: dict,
 def _format_per_leg_alternatives_text(per_leg_offers: dict,
                                       trip_config: Optional[dict] = None) -> str:
     """Plain-text version of the per-leg alternatives section."""
-    grouped = _group_offers_by_route(per_leg_offers, trip_config, top_per_pair=2)
+    grouped = _group_offers_by_route(per_leg_offers, trip_config, top_per_pair=5)
     if not grouped:
         return "  (no priced offers available)\n"
 
@@ -800,27 +796,27 @@ def format_digest_html(
     # Per-leg alternatives section — only renders if main.py passed in the
     # multi-offer dict (None when called from older code paths or tests).
     per_leg_html = (
-        _section("🛫 Top alternatives per route (cheapest 2 · see Google Flights for more)",
+        _section("🛫 Top options per leg (cheapest 3 · link for more)",
                  _html_per_leg_alternatives(per_leg_offers, trip_config))
         if per_leg_offers else ""
     )
 
-    # Drop "Best Cash Combo" — it duplicates rank #1 in the Full Ranking,
-    # which is now at the top. Best Points is hidden when it's the same combo
-    # as the top of the cash ranking (no extra info).
+    # Best Points shown only when it's a different combo from rank #1 in the
+    # scored Full Ranking (otherwise it's duplicative).
     points_section = ""
     if top_points and (top_points is not ranked_combos[0]):
         points_section = _section("🏆 Best Points Combo", points_html)
 
+    # We dropped Best Direct / Best Single-Ticket / Best Stopover Options.
+    # Those were all combos already visible via the per-leg section (sorted
+    # in trip order) and the Full Ranking. Keeping them added ~25KB for
+    # zero unique information.
     return (
         f'<div style="{_CSS["body"]}"><div style="{_CSS["wrap"]}">'
         f'{header}'
         f'{per_leg_html}'
-        f'{_section("✈ Best Direct (no stopover)", direct_html)}'
-        f'{_section("🎫 Best Single-Ticket (one PNR end to end)", through_html)}'
-        f'{_section("🏝 Best Stopover Options", stopover_html)}'
         f'{points_section}'
-        f'{_section("Full Ranking (overall scored combos)", ranking_html)}'
+        f'{_section("🏆 Full Ranking (top 10 scored trips end-to-end)", ranking_html)}'
         f'{_section("Award Space Alerts", alerts_html)}'
         f'{_section("Manual Award Check", manual_html)}'
         f'</div></div>'
