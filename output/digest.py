@@ -260,8 +260,8 @@ def format_digest(
 
     per_leg_block = (
         "──────────────────────────────────────────────────────────────\n"
-        "🛫 TOP ALTERNATIVES PER ROUTE (cheapest 5 per origin → destination)\n"
-        f"{_format_per_leg_alternatives_text(per_leg_offers)}"
+        "🛫 TOP ALTERNATIVES PER ROUTE (cheapest 2 · click route URL for more)\n"
+        f"{_format_per_leg_alternatives_text(per_leg_offers, trip_config)}"
         if per_leg_offers else ""
     )
 
@@ -275,8 +275,6 @@ def format_digest(
 
     return (
         f"{header}\n"
-        f"FULL RANKING (top 10 of {len(ranked_combos)} combinations)\n\n"
-        f"{top_rows}\n"
         f"{per_leg_block}"
         "──────────────────────────────────────────────────────────────\n"
         "✈  BEST DIRECT (no stopover)\n"
@@ -287,6 +285,9 @@ def format_digest(
         "🏝  BEST STOPOVER OPTIONS  (cheapest combo via each Caribbean city)\n"
         f"{stopover_block}\n"
         f"{points_section}"
+        "──────────────────────────────────────────────────────────────\n"
+        f"FULL RANKING (top 10 of {len(ranked_combos)} scored combinations)\n\n"
+        f"{top_rows}\n"
         "──────────────────────────────────────────────────────────────\n"
         "AWARD SPACE ALERTS\n"
         f"{_format_award_alerts(ranked_combos)}\n"
@@ -521,12 +522,50 @@ def _flight_nos(segments: list) -> str:
     return " · ".join(out)
 
 
-def _group_offers_by_route(per_leg_offers: dict, top_per_pair: int = 5) -> list:
-    """Collapse all per-leg offers into [(origin, dest), [top N offers across all dates]].
+def _route_stage(origin: str, dest: str, trip_config: dict) -> tuple:
+    """Classify a (origin, dest) pair by trip stage so we can order the per-leg
+    section in trip-logical reading order (outbound → middle → domestic).
 
-    Order: (origin, dest) pairs sorted by their cheapest offer (cheapest pair
-    first), so the most affordable routes surface at the top of the email.
-    Each pair's offers are sorted by price ascending and trimmed to top_per_pair.
+    Returns (stage_rank, dest_name) where stage_rank is:
+        0 = outbound from home to Caribbean stopover (ORD→AUA)
+        1 = Caribbean to Brazil gateway (AUA→GRU)
+        2 = Brazil gateway to final domestic (GRU→NVT)
+        3 = Caribbean to final domestic, single PNR (AUA→FLN)
+        4 = home direct to final domestic (ORD→NVT)
+        5 = anything else
+    """
+    trip_origin = trip_config.get("origin", "")
+    stopovers = set((trip_config.get("stopovers") or {}).get("candidates") or [])
+    gateways = set(
+        trip_config.get("brazil_gateways")
+        or [trip_config.get("final_destination", "")]
+    )
+    domestic = set((trip_config.get("domestic_leg") or {}).get("destinations") or [])
+
+    if origin == trip_origin and (dest in stopovers or dest in gateways):
+        # Outbound from home: to Caribbean stopover OR straight to Brazil gateway.
+        stage = 0
+    elif origin in stopovers and dest in gateways:
+        stage = 1  # Caribbean → Brazil gateway
+    elif origin in gateways and dest in domestic:
+        stage = 2  # Brazil gateway → final domestic
+    elif origin == trip_origin and dest in domestic:
+        stage = 3  # through-direct from home
+    elif origin in stopovers and dest in domestic:
+        stage = 4  # through-ticket via Caribbean
+    else:
+        stage = 5
+    return (stage, origin, dest)
+
+
+def _group_offers_by_route(per_leg_offers: dict, trip_config: Optional[dict] = None,
+                           top_per_pair: int = 3) -> list:
+    """Collapse per-leg offers into one entry per (origin, dest) pair.
+
+    Each entry: ((origin, dest), top_offers, extra_count). Offers sorted
+    cheapest-first; extra_count tells the renderer how many more were trimmed.
+    Pairs sorted trip-logically when trip_config is provided, otherwise by
+    cheapest-first price.
     """
     by_pair: dict = {}
     for leg_key, offers in (per_leg_offers or {}).items():
@@ -536,24 +575,47 @@ def _group_offers_by_route(per_leg_offers: dict, top_per_pair: int = 5) -> list:
             key = (o.get("origin"), o.get("destination"))
             by_pair.setdefault(key, []).append(o)
 
-    grouped = []
+    result = []
     for pair, offers in by_pair.items():
         offers.sort(key=lambda x: (x.get("price_usd") or float("inf"),
                                    x.get("duration_hours") or float("inf")))
-        grouped.append((pair, offers[:top_per_pair]))
-    grouped.sort(key=lambda kv: (kv[1][0].get("price_usd") or float("inf"))
-                                if kv[1] else float("inf"))
-    return grouped
+        top = offers[:top_per_pair]
+        extra = len(offers) - len(top)
+        result.append((pair, top, extra))
+
+    if trip_config:
+        result.sort(key=lambda kv: _route_stage(kv[0][0], kv[0][1], trip_config))
+    else:
+        result.sort(key=lambda kv: (kv[1][0].get("price_usd") or float("inf"))
+                                    if kv[1] else float("inf"))
+    return result
 
 
-def _html_per_leg_alternatives(per_leg_offers: dict) -> str:
+def _google_flights_url(origin: str, dest: str, sample_date: str) -> str:
+    """URL that opens Google Flights with the route pre-filled.
+
+    Uses a sample date from the top offers so the link actually lands on a
+    populated search page. Google handles the URL-encoded natural-language
+    query well enough for one-way pre-fills.
+    """
+    from urllib.parse import quote
+    q = quote(f"Flights from {origin} to {dest} on {sample_date}")
+    return f"https://www.google.com/travel/flights?q={q}"
+
+
+def _html_per_leg_alternatives(per_leg_offers: dict,
+                               trip_config: Optional[dict] = None) -> str:
     """Render top N offers for each (origin, dest) pair as small tables."""
-    grouped = _group_offers_by_route(per_leg_offers, top_per_pair=5)
+    # top_per_pair=2 keeps the email under Gmail's ~102KB clip threshold for a
+    # 20+ route trip while still letting the user compare cheapest vs a second
+    # option (e.g. fastest carrier vs lowest price). The Google Flights link
+    # per route covers the rest.
+    grouped = _group_offers_by_route(per_leg_offers, trip_config, top_per_pair=2)
     if not grouped:
         return '<p style="color:#666;">(no priced offers available)</p>'
 
     sections = []
-    for (origin, dest), offers in grouped:
+    for (origin, dest), offers, extra in grouped:
         rows = []
         for o in offers:
             airlines = _esc(_airlines_label(o.get("segments") or [],
@@ -590,11 +652,25 @@ def _html_per_leg_alternatives(per_leg_offers: dict) -> str:
                 f'<td style="{_CSS["rank_td"]};">{book}</td>'
                 f'</tr>'
             )
+        sample_date = offers[0].get("date") or ""
+        gf_link = (
+            f' · <a href="{_esc(_google_flights_url(origin, dest, sample_date))}" '
+            f'style="color:#0969da;text-decoration:none;font-size:12px;" '
+            f'target="_blank">see all on Google Flights ↗</a>'
+            if extra else ''
+        )
+        extra_line = (
+            f'<p style="color:#666;font-size:11px;margin:2px 0 10px 0;">'
+            f'+ {extra} more option{"" if extra == 1 else "s"} not shown</p>'
+            if extra else ''
+        )
         sections.append(
             f'<h3 style="font-size:14px;margin:14px 0 4px 0;">'
             f'{_esc(origin)} → {_esc(dest)} '
             f'<span style="font-weight:normal;color:#666;font-size:12px;">'
-            f'(top {len(offers)})</span></h3>'
+            f'(top {len(offers)}'
+            f'{" of " + str(len(offers) + extra) if extra else ""})</span>'
+            f'{gf_link}</h3>'
             f'<table style="{_CSS["rank_tbl"]}"><thead><tr>'
             f'<th style="{_CSS["rank_th"]}">Date</th>'
             f'<th style="{_CSS["rank_th"]}">Airline</th>'
@@ -605,19 +681,22 @@ def _html_per_leg_alternatives(per_leg_offers: dict) -> str:
             f'<th style="{_CSS["rank_th"]};text-align:right;">Price</th>'
             f'<th style="{_CSS["rank_th"]}"></th>'
             f'</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+            f'{extra_line}'
         )
     return "".join(sections)
 
 
-def _format_per_leg_alternatives_text(per_leg_offers: dict) -> str:
+def _format_per_leg_alternatives_text(per_leg_offers: dict,
+                                      trip_config: Optional[dict] = None) -> str:
     """Plain-text version of the per-leg alternatives section."""
-    grouped = _group_offers_by_route(per_leg_offers, top_per_pair=5)
+    grouped = _group_offers_by_route(per_leg_offers, trip_config, top_per_pair=2)
     if not grouped:
         return "  (no priced offers available)\n"
 
     out = []
-    for (origin, dest), offers in grouped:
-        out.append(f"\n  ▸ {origin} → {dest}  (top {len(offers)})")
+    for (origin, dest), offers, extra in grouped:
+        suffix = f" (top {len(offers)} of {len(offers) + extra})" if extra else f" (top {len(offers)})"
+        out.append(f"\n  ▸ {origin} → {dest} {suffix}")
         for i, o in enumerate(offers, 1):
             stops_n = o.get("stops") or 0
             stops_str = "nonstop" if stops_n == 0 else f"{stops_n} stop{'' if stops_n == 1 else 's'}"
@@ -627,6 +706,8 @@ def _format_per_leg_alternatives_text(per_leg_offers: dict) -> str:
                 f"{stops_str:<10} | {o.get('duration_str') or '—':<8} | "
                 f"${o['price_usd']:>7,.0f}"
             )
+        if extra:
+            out.append(f"       + {extra} more (not shown)")
     return "\n".join(out) + "\n"
 
 
@@ -719,8 +800,8 @@ def format_digest_html(
     # Per-leg alternatives section — only renders if main.py passed in the
     # multi-offer dict (None when called from older code paths or tests).
     per_leg_html = (
-        _section("🛫 Top alternatives per route (cheapest 5)",
-                 _html_per_leg_alternatives(per_leg_offers))
+        _section("🛫 Top alternatives per route (cheapest 2 · see Google Flights for more)",
+                 _html_per_leg_alternatives(per_leg_offers, trip_config))
         if per_leg_offers else ""
     )
 
@@ -734,12 +815,12 @@ def format_digest_html(
     return (
         f'<div style="{_CSS["body"]}"><div style="{_CSS["wrap"]}">'
         f'{header}'
-        f'{_section("Full Ranking", ranking_html)}'
         f'{per_leg_html}'
         f'{_section("✈ Best Direct (no stopover)", direct_html)}'
         f'{_section("🎫 Best Single-Ticket (one PNR end to end)", through_html)}'
         f'{_section("🏝 Best Stopover Options", stopover_html)}'
         f'{points_section}'
+        f'{_section("Full Ranking (overall scored combos)", ranking_html)}'
         f'{_section("Award Space Alerts", alerts_html)}'
         f'{_section("Manual Award Check", manual_html)}'
         f'</div></div>'
