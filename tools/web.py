@@ -48,7 +48,7 @@ except ImportError:
 from flask import Flask, Response, render_template_string, request
 
 from engine.routes import Leg
-from fetchers.letsfg import fetch_cash_fares
+from fetchers.letsfg import fetch_cash_offers
 from fetchers.seats_aero import fetch_award_fares
 from output.airlines import airline_name
 
@@ -197,101 +197,139 @@ RESULTS_HTML = """
   <title>Flight Search — Results</title>
   <style>
     :root { --bd: #d0d7de; --bg: #f6f8fa; --ink: #1f2328; --accent: #0969da;
-            --green: #1a7f37; --red: #cf222e; }
+            --green: #1a7f37; --green-bg: #dafbe1; --red: #cf222e; --amber: #fff8c5; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-           max-width: 980px; margin: 2rem auto; padding: 0 1rem; color: var(--ink); }
-    h1 { margin: 0 0 .25rem; } h2 { margin-top: 2rem; }
+           max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: var(--ink); }
+    h1 { margin: 0 0 .25rem; }
     a.back { color: var(--accent); text-decoration: none; font-size: .9rem; }
     a.back:hover { text-decoration: underline; }
-    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-    th, td { padding: .55rem .7rem; text-align: left; border-bottom: 1px solid var(--bd);
-             vertical-align: top; }
-    th { background: var(--bg); font-weight: 600; font-size: .9rem; color: #656d76; }
-    td .muted { color: #656d76; font-size: .85rem; display: block; }
+
+    .leg { margin: 1.6rem 0 1.2rem; border: 1px solid var(--bd); border-radius: 8px;
+           overflow: hidden; }
+    .leg-head { padding: .9rem 1.1rem; background: var(--bg); border-bottom: 1px solid var(--bd);
+                display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
+    .leg-head .route { font-size: 1.15rem; font-weight: 600; }
+    .leg-head .date { color: #656d76; }
+    .leg-head .cheapest-badge { margin-left: auto; background: var(--green-bg);
+           color: var(--green); padding: .2rem .6rem; border-radius: 4px;
+           font-size: .85rem; font-weight: 600; white-space: nowrap; }
+    .leg-head .count { color: #656d76; font-size: .85rem; }
+
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--bd);
+             vertical-align: middle; font-size: .92rem; }
+    thead th { background: white; font-weight: 600; font-size: .8rem;
+               color: #656d76; text-transform: uppercase; letter-spacing: .04em;
+               border-bottom: 2px solid var(--bd); }
+    tr.cheapest td { background: color-mix(in srgb, var(--green-bg) 60%, white); }
+    tr.cheapest td:first-child::before { content: "⭐ "; }
+    tbody tr:last-child td { border-bottom: 0; }
+
     td.price { font-weight: 600; text-align: right; white-space: nowrap; }
-    td.miss { color: var(--red); font-style: italic; }
+    td .muted { color: #656d76; font-size: .82rem; display: block; }
+    .nonstop { color: var(--green); font-weight: 500; }
+    .book { background: var(--accent); color: white; padding: .32rem .7rem;
+            border-radius: 5px; text-decoration: none; font-size: .85rem;
+            white-space: nowrap; display: inline-block; }
+    .book:hover { background: #0860c7; }
+
+    .no-offers { padding: 1rem 1.2rem; color: var(--red); font-style: italic;
+                 background: white; }
+    .awards-bar { padding: .55rem 1.1rem; background: #f0fff6;
+                  border-bottom: 1px solid var(--bd); }
+    .award { display: inline-block; background: var(--green-bg); color: var(--green);
+             border-radius: 4px; padding: 2px 7px; margin: 2px 5px 2px 0;
+             font-size: .8rem; font-weight: 500; }
+    .note { display: inline-block; background: var(--amber); color: #6f5500;
+            border-radius: 4px; padding: 1px 7px; margin-left: .3rem;
+            font-size: .72rem; font-weight: 600; }
+
     .totals { background: var(--bg); border-radius: 8px; padding: 1rem 1.25rem;
               margin: 1.5rem 0; display: grid; grid-template-columns: 1fr 1fr 1fr;
               gap: 1rem; }
-    .totals div { }
     .totals .label { color: #656d76; font-size: .85rem; }
     .totals .value { font-size: 1.3rem; font-weight: 600; }
-    .book { background: var(--accent); color: white; padding: .35rem .7rem;
-            border-radius: 5px; text-decoration: none; font-size: .85rem; white-space: nowrap; }
-    .book:hover { background: #0860c7; }
-    .awards { margin-top: .4rem; }
-    .award { display: inline-block; background: #dafbe1; color: var(--green);
-             border-radius: 4px; padding: 2px 6px; margin: 2px 4px 2px 0; font-size: .8rem; }
-    .note { display: inline-block; background: #fff8c5; color: #6f5500;
-            border-radius: 4px; padding: 1px 5px; margin-left: .35rem; font-size: .72rem; }
-    .segs { color: #656d76; font-size: .82rem; margin-top: .25rem; }
   </style>
 </head>
 <body>
   <a class="back" href="/">← New search</a>
   <h1>Results</h1>
 
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Route</th>
-        <th>Date</th>
-        <th>Airline</th>
-        <th>Flight</th>
-        <th>Duration</th>
-        <th class="price">Cash (USD)</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td><strong>{{ row.origin }} → {{ row.destination }}</strong>
-            {% if row.source_note %}<span class="note">{{ row.source_note }}</span>{% endif %}
-            {% if row.layovers %}<span class="muted">via {{ row.layovers|join(', ') }}</span>{% endif %}
-            {% if row.awards %}
-              <div class="awards">
-                {% for prog, a in row.awards.items() %}
-                  <span class="award">{{ prog }}: {{ "{:,}".format(a.miles) }} mi + ${{ "%.0f"|format(a.taxes_usd) }}</span>
-                {% endfor %}
-              </div>
-            {% endif %}
-        </td>
-        <td>{{ row.date }}
-          {% if row.depart_time or row.arrive_time %}
-            <span class="muted">{{ row.depart_time or '?' }} → {{ row.arrive_time or '?' }}</span>
-          {% endif %}
-        </td>
-        <td>{{ row.airline_name or '—' }}</td>
-        <td>{{ row.flight_nos or '—' }}</td>
-        <td>{{ row.duration_str or '—' }}</td>
-        {% if row.price_usd is not none %}
-          <td class="price">${{ "{:,.2f}".format(row.price_usd) }}</td>
-          <td>{% if row.booking_url %}<a class="book" href="{{ row.booking_url }}" target="_blank" rel="noopener">Book</a>{% endif %}</td>
-        {% else %}
-          <td class="price miss" colspan="2">{{ row.error or 'no offer' }}</td>
-        {% endif %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
   <div class="totals">
     <div>
-      <div class="label">Total cash</div>
+      <div class="label">Cheapest-combo total</div>
       <div class="value">${{ "{:,.2f}".format(total_cash) }}</div>
-    </div>
-    <div>
-      <div class="label">Total flight time</div>
-      <div class="value">{{ total_duration }}</div>
     </div>
     <div>
       <div class="label">Legs priced</div>
       <div class="value">{{ priced_count }}/{{ total_count }}</div>
     </div>
+    <div>
+      <div class="label">Total flight time</div>
+      <div class="value">{{ total_duration }}</div>
+    </div>
   </div>
+
+  {% for leg in legs %}
+  <div class="leg">
+    <div class="leg-head">
+      <span class="route">{{ leg.origin }} → {{ leg.destination }}</span>
+      <span class="date">{{ leg.date }}</span>
+      {% if leg.source_note %}<span class="note">{{ leg.source_note }}</span>{% endif %}
+      <span class="count">{{ leg.offer_count }} option{{ '' if leg.offer_count == 1 else 's' }}</span>
+      {% if leg.cheapest_price is not none %}
+        <span class="cheapest-badge">from ${{ "{:,.2f}".format(leg.cheapest_price) }}</span>
+      {% endif %}
+    </div>
+
+    {% if leg.awards %}
+    <div class="awards-bar">
+      {% for prog, a in leg.awards.items() %}
+        <span class="award">{{ prog }}: {{ "{:,}".format(a.miles) }} mi + ${{ "%.0f"|format(a.taxes_usd) }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if leg.offers %}
+      <table>
+        <thead>
+          <tr>
+            <th>Airline</th>
+            <th>Flight</th>
+            <th>Stops</th>
+            <th>Times</th>
+            <th>Duration</th>
+            <th class="price">Price</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in leg.offers %}
+          <tr {% if loop.first %}class="cheapest"{% endif %}>
+            <td>{{ o.airline_name or o.airline_code or '—' }}</td>
+            <td>{{ o.flight_nos or '—' }}</td>
+            <td>
+              {% if o.stops == 0 %}<span class="nonstop">nonstop</span>
+              {% else %}{{ o.stops }} stop{{ '' if o.stops == 1 else 's' }}
+                {% if o.layovers %}<span class="muted">via {{ o.layovers|join(', ') }}</span>{% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if o.depart_time or o.arrive_time %}{{ o.depart_time or '?' }} → {{ o.arrive_time or '?' }}
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ o.duration_str or '—' }}</td>
+            <td class="price">${{ "{:,.2f}".format(o.price_usd) }}</td>
+            <td>{% if o.booking_url %}<a class="book" href="{{ o.booking_url }}" target="_blank" rel="noopener">Book</a>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="no-offers">No offers found. Try a nearby date or different airport pair.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
 
   <a class="back" href="/">← New search</a>
 </body>
@@ -327,94 +365,90 @@ def _format_duration_total(hours_sum: float) -> str:
     return f"{h}h{m:02d}m"
 
 
-def _failed_legs(cash: dict, legs: List[Leg]) -> List[Leg]:
-    """Legs that returned no priced offer in the most recent fetch."""
-    return [
-        leg for leg in legs
-        if (cash.get(leg.key) or {}).get("price_usd") is None
-    ]
+def _empty_keys(offers_by_leg: dict, legs: List[Leg]) -> List[Leg]:
+    """Legs whose current offer list is empty."""
+    return [leg for leg in legs if not offers_by_leg.get(leg.key)]
 
 
-async def _retry_failed(legs: List[Leg], cash: dict, session: aiohttp.ClientSession,
-                        delay_sec: float = 3.0) -> int:
-    """Retry empty legs once after a short delay. Mutates `cash` in place."""
-    failed = _failed_legs(cash, legs)
-    if not failed:
+async def _retry_empty(legs: List[Leg], offers_by_leg: dict,
+                       source_notes: dict, session: aiohttp.ClientSession,
+                       delay_sec: float = 3.0) -> int:
+    """Retry empty legs once after a short delay. Mutates dicts in place."""
+    empty = _empty_keys(offers_by_leg, legs)
+    if not empty:
         return 0
-    log.info("retry: %d empty legs after %.1fs delay", len(failed), delay_sec)
+    log.info("retry: %d empty legs after %.1fs delay", len(empty), delay_sec)
     await asyncio.sleep(delay_sec)
-    retry = await fetch_cash_fares(failed, {}, session=session)
+    retry = await fetch_cash_offers(empty, {}, session=session)
     recovered = 0
-    for leg in failed:
-        new_row = retry.get(leg.key) or {}
-        if new_row.get("price_usd") is not None:
-            new_row["source_note"] = "retry"
-            cash[leg.key] = new_row
+    for leg in empty:
+        new_offers = retry.get(leg.key) or []
+        if new_offers:
+            offers_by_leg[leg.key] = new_offers
+            source_notes[leg.key] = "retry"
             recovered += 1
     return recovered
 
 
-async def _browser_fallback(legs: List[Leg], cash: dict,
+async def _browser_fallback(legs: List[Leg], offers_by_leg: dict,
+                            source_notes: dict,
                             session: aiohttp.ClientSession) -> int:
-    """For legs still without a price, re-run with browser connectors enabled.
+    """Re-run still-empty legs with browser connectors enabled.
 
-    Patches letsfg's cached _BROWSERS_AVAILABLE flag on for the duration of
-    the call, then restores it. ~3–5x slower per leg but covers routes the
-    API-only pool misses (smaller domestic carriers, specific OTAs).
+    Patches letsfg's cached _BROWSERS_AVAILABLE on for the call duration,
+    then restores. Covers carriers/OTAs the API-only pool misses.
     """
-    failed = _failed_legs(cash, legs)
-    if not failed:
+    empty = _empty_keys(offers_by_leg, legs)
+    if not empty:
         return 0
     from letsfg.connectors import engine as _eng
     if _eng._BROWSERS_AVAILABLE:
-        return 0  # browsers already on, nothing to escalate to
-    log.info("browser-fallback: %d legs still empty, escalating to full mode", len(failed))
+        return 0
+    log.info("browser-fallback: %d legs still empty, escalating to full mode", len(empty))
     fallback_cfg = {
         "fetchers": {"letsfg": {
-            "mode": None,            # full connector set
-            "timeout_sec": 90,       # browsers need more time
-            "concurrency": 1,        # one at a time to avoid resource thrash
-            "max_browsers": 2,
+            "mode": None, "timeout_sec": 90, "concurrency": 1, "max_browsers": 2,
         }}
     }
     _eng._BROWSERS_AVAILABLE = True
     try:
-        result = await fetch_cash_fares(failed, fallback_cfg, session=session)
+        result = await fetch_cash_offers(empty, fallback_cfg, session=session)
     finally:
         _eng._BROWSERS_AVAILABLE = False
     recovered = 0
-    for leg in failed:
-        new_row = result.get(leg.key) or {}
-        if new_row.get("price_usd") is not None:
-            new_row["source_note"] = "full mode"
-            cash[leg.key] = new_row
+    for leg in empty:
+        new_offers = result.get(leg.key) or []
+        if new_offers:
+            offers_by_leg[leg.key] = new_offers
+            source_notes[leg.key] = "full mode"
             recovered += 1
     return recovered
 
 
 async def _run_search(legs: List[Leg], include_award: bool) -> dict:
-    """Fetch cash (+ optional award) for each leg, with retry + browser fallback."""
+    """Fetch all cash offers per leg (+ optional award), with recovery.
+
+    Returns {'offers_by_leg': {key: [offer, ...]}, 'awards': {key: {...}},
+             'source_notes': {key: 'retry'|'full mode'}}.
+    """
+    source_notes: dict = {}
     async with aiohttp.ClientSession() as session:
-        cash_task = fetch_cash_fares(legs, {}, session=session)
+        cash_task = fetch_cash_offers(legs, {}, session=session)
         if include_award:
             award_task = fetch_award_fares(legs, {}, session=session)
-            cash, award = await asyncio.gather(cash_task, award_task)
+            offers_by_leg, award = await asyncio.gather(cash_task, award_task)
         else:
-            cash = await cash_task
+            offers_by_leg = await cash_task
             award = {}
 
-        # Empty-result recovery: cheap retry, then expensive browser fallback.
-        await _retry_failed(legs, cash, session)
-        await _browser_fallback(legs, cash, session)
+        await _retry_empty(legs, offers_by_leg, source_notes, session)
+        await _browser_fallback(legs, offers_by_leg, source_notes, session)
 
-    merged = {}
-    for leg in legs:
-        c = cash.get(leg.key) or {}
-        a = (award.get(leg.key) or {}).get("awards") or {}
-        row = dict(c)
-        row["awards"] = a
-        merged[leg.key] = row
-    return merged
+    return {
+        "offers_by_leg": offers_by_leg,
+        "awards": {k: (v or {}).get("awards") or {} for k, v in (award or {}).items()},
+        "source_notes": source_notes,
+    }
 
 
 @app.route("/")
@@ -446,39 +480,49 @@ def search():
     log.info("search: %d legs in %.1fs (award=%s)",
              len(legs), time.perf_counter() - t0, include_award)
 
-    rows = []
+    offers_by_leg = results["offers_by_leg"]
+    awards_by_leg = results["awards"]
+    source_notes = results["source_notes"]
+
+    leg_rows = []
     total_cash = 0.0
     total_hours = 0.0
     priced = 0
     for leg in legs:
-        r = results.get(leg.key) or {}
-        row = {
+        offers = offers_by_leg.get(leg.key) or []
+        shaped = [{
+            "airline_name": airline_name(o.get("airline") or ""),
+            "airline_code": o.get("airline") or "",
+            "duration_str": o.get("duration_str"),
+            "depart_time": o.get("depart_time"),
+            "arrive_time": o.get("arrive_time"),
+            "layovers": o.get("layovers") or [],
+            "flight_nos": _segments_summary(o.get("segments") or []),
+            "booking_url": o.get("booking_url"),
+            "price_usd": o.get("price_usd"),
+            "stops": o.get("stops") or 0,
+        } for o in offers]
+
+        cheapest = shaped[0] if shaped else None
+        leg_rows.append({
             "origin": leg.origin,
             "destination": leg.destination,
             "date": leg.date.isoformat(),
-            "price_usd": r.get("price_usd"),
-            "airline_name": airline_name(r.get("airline") or ""),
-            "duration_str": r.get("duration_str"),
-            "depart_time": r.get("depart_time"),
-            "arrive_time": r.get("arrive_time"),
-            "layovers": r.get("layovers") or [],
-            "segments_summary": _segments_summary(r.get("segments") or []),
-            "flight_nos": _segments_summary(r.get("segments") or []),
-            "booking_url": r.get("booking_url"),
-            "awards": r.get("awards") or {},
-            "source_note": r.get("source_note"),
-            "error": r.get("error"),
-        }
-        rows.append(row)
-        if row["price_usd"] is not None:
-            total_cash += row["price_usd"]
+            "offers": shaped,
+            "awards": awards_by_leg.get(leg.key) or {},
+            "source_note": source_notes.get(leg.key),
+            "cheapest_price": cheapest["price_usd"] if cheapest else None,
+            "offer_count": len(shaped),
+        })
+        if cheapest:
+            total_cash += cheapest["price_usd"]
             priced += 1
-        if r.get("duration_hours"):
-            total_hours += r["duration_hours"]
+            if offers[0].get("duration_hours"):
+                total_hours += offers[0]["duration_hours"]
 
     return render_template_string(
         RESULTS_HTML,
-        rows=rows,
+        legs=leg_rows,
         total_cash=total_cash,
         total_duration=_format_duration_total(total_hours),
         priced_count=priced,

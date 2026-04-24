@@ -182,6 +182,36 @@ async def _fetch_one(sem: asyncio.Semaphore, leg: Leg, rates: dict,
     return _offer_to_leg_result(offers[0], leg, rates)
 
 
+async def _fetch_offers_one(sem: asyncio.Semaphore, leg: Leg, rates: dict,
+                            currency: str, limit: int, max_browsers: int,
+                            mode: Optional[str], timeout: float) -> List[dict]:
+    """Like _fetch_one but returns every priced offer (sorted cheapest-first)."""
+    async with sem:
+        try:
+            search = await asyncio.wait_for(
+                _search_async(
+                    leg.origin, leg.destination, leg.date.isoformat(),
+                    currency, limit, max_browsers, mode,
+                ),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            log.info("letsfg leg %s timeout after %ss", leg.key, timeout)
+            return []
+        except Exception as e:
+            log.warning("letsfg leg %s raised: %s", leg.key, e)
+            return []
+
+    offers = (search or {}).get("offers") or []
+    rows: List[dict] = []
+    for offer in offers:
+        row = _offer_to_leg_result(offer, leg, rates)
+        if row.get("price_usd") is not None:
+            rows.append(row)
+    rows.sort(key=lambda r: r.get("price_usd") or float("inf"))
+    return rows
+
+
 async def fetch_cash_fares(
     legs: List[Leg], config: dict, session: aiohttp.ClientSession = None
 ) -> Dict[str, dict]:
@@ -226,6 +256,51 @@ async def fetch_cash_fares(
             data["source"] = "letsfg"
             data["error"] = str(res)
             out[leg.key] = data
+        else:
+            out[leg.key] = res
+    return out
+
+
+async def fetch_cash_offers(
+    legs: List[Leg], config: dict, session: aiohttp.ClientSession = None
+) -> Dict[str, List[dict]]:
+    """Like fetch_cash_fares but returns *all* priced offers per leg, not just
+    the cheapest. Each leg value is a List[dict] sorted by price ascending.
+
+    Useful for the ad-hoc search UI where the user wants to compare carriers
+    and booking sources side-by-side. Daily digest still uses fetch_cash_fares.
+    """
+    cfg = (config.get("fetchers") or {}).get("letsfg") or {}
+    mode = cfg.get("mode", DEFAULT_MODE)
+    currency = cfg.get("currency", "USD")
+    # Bump the default limit so we actually collect alternatives, not just 10
+    # total (LetsFG aggregates across connectors before applying limit).
+    limit = int(cfg.get("limit", 25))
+    max_browsers = int(cfg.get("max_browsers", DEFAULT_MAX_BROWSERS))
+    concurrency = int(cfg.get("concurrency", DEFAULT_CONCURRENCY))
+    timeout = float(cfg.get("timeout_sec", DEFAULT_TIMEOUT_SECONDS))
+
+    own_session = session is None
+    if own_session:
+        session = aiohttp.ClientSession()
+    try:
+        rates = await get_rates(session)
+    finally:
+        if own_session:
+            await session.close()
+
+    sem = asyncio.Semaphore(concurrency)
+    coros = [
+        _fetch_offers_one(sem, leg, rates, currency, limit, max_browsers, mode, timeout)
+        for leg in legs
+    ]
+    results = await asyncio.gather(*coros, return_exceptions=True)
+
+    out: Dict[str, List[dict]] = {}
+    for leg, res in zip(legs, results):
+        if isinstance(res, Exception):
+            log.warning("letsfg leg %s exception: %s", leg.key, res)
+            out[leg.key] = []
         else:
             out[leg.key] = res
     return out
