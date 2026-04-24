@@ -180,6 +180,7 @@ def format_digest(
     run_date: date,
     trip_config: dict,
     prev_day_data: Optional[dict] = None,
+    per_leg_offers: Optional[dict] = None,
 ) -> str:
     if not ranked_combos:
         return "No complete flight combinations found. Check API credentials and retry."
@@ -257,12 +258,27 @@ def format_digest(
         else "  No single-ticket through options priced\n"
     )
 
+    per_leg_block = (
+        "──────────────────────────────────────────────────────────────\n"
+        "🛫 TOP ALTERNATIVES PER ROUTE (cheapest 5 per origin → destination)\n"
+        f"{_format_per_leg_alternatives_text(per_leg_offers)}"
+        if per_leg_offers else ""
+    )
+
+    points_section = ""
+    if top_points and (top_points is not ranked_combos[0]):
+        points_section = (
+            "──────────────────────────────────────────────────────────────\n"
+            "🏆 BEST POINTS COMBO\n"
+            f"{points_block}\n"
+        )
+
     return (
         f"{header}\n"
-        "🥇 BEST CASH COMBO\n"
-        f"{_format_combo_block(top_cash, prev_day_data)}\n"
-        "🏆 BEST POINTS COMBO\n"
-        f"{points_block}\n"
+        f"FULL RANKING (top 10 of {len(ranked_combos)} combinations)\n\n"
+        f"{top_rows}\n"
+        f"{per_leg_block}"
+        "──────────────────────────────────────────────────────────────\n"
         "✈  BEST DIRECT (no stopover)\n"
         f"{direct_block}\n"
         "🎫 BEST SINGLE-TICKET (ORD → final dest on one PNR)\n"
@@ -270,9 +286,7 @@ def format_digest(
         "──────────────────────────────────────────────────────────────\n"
         "🏝  BEST STOPOVER OPTIONS  (cheapest combo via each Caribbean city)\n"
         f"{stopover_block}\n"
-        "──────────────────────────────────────────────────────────────\n"
-        f"FULL RANKING (top 10 of {len(ranked_combos)} combinations)\n\n"
-        f"{top_rows}\n"
+        f"{points_section}"
         "──────────────────────────────────────────────────────────────\n"
         "AWARD SPACE ALERTS\n"
         f"{_format_award_alerts(ranked_combos)}\n"
@@ -482,11 +496,146 @@ def _html_award_alerts(ranked: List[ScoredCombo]) -> str:
     return f'<ul style="padding-left:20px;">{"".join(items)}</ul>'
 
 
+def _airlines_label(segments: list, owner: str = "") -> str:
+    """Return a 'Carrier + Carrier' label listing distinct marketing airlines."""
+    seen: list = []
+    for code in [owner] if owner else []:
+        if code and code not in seen:
+            seen.append(code)
+    for s in (segments or []):
+        c = (s.get("carrier") or "").strip()
+        if c and c not in seen:
+            seen.append(c)
+    return " + ".join(airline_name(c) for c in seen) if seen else "—"
+
+
+def _flight_nos(segments: list) -> str:
+    """Compact flight-number summary like 'UA823 · AV265'."""
+    out = []
+    for s in (segments or []):
+        carrier = (s.get("carrier") or "").strip()
+        fn = (s.get("flight_no") or "").strip()
+        if not fn and not carrier:
+            continue
+        out.append(fn if (fn and fn[:1].isalpha()) else f"{carrier}{fn}")
+    return " · ".join(out)
+
+
+def _group_offers_by_route(per_leg_offers: dict, top_per_pair: int = 5) -> list:
+    """Collapse all per-leg offers into [(origin, dest), [top N offers across all dates]].
+
+    Order: (origin, dest) pairs sorted by their cheapest offer (cheapest pair
+    first), so the most affordable routes surface at the top of the email.
+    Each pair's offers are sorted by price ascending and trimmed to top_per_pair.
+    """
+    by_pair: dict = {}
+    for leg_key, offers in (per_leg_offers or {}).items():
+        for o in offers or []:
+            if o.get("price_usd") is None:
+                continue
+            key = (o.get("origin"), o.get("destination"))
+            by_pair.setdefault(key, []).append(o)
+
+    grouped = []
+    for pair, offers in by_pair.items():
+        offers.sort(key=lambda x: (x.get("price_usd") or float("inf"),
+                                   x.get("duration_hours") or float("inf")))
+        grouped.append((pair, offers[:top_per_pair]))
+    grouped.sort(key=lambda kv: (kv[1][0].get("price_usd") or float("inf"))
+                                if kv[1] else float("inf"))
+    return grouped
+
+
+def _html_per_leg_alternatives(per_leg_offers: dict) -> str:
+    """Render top N offers for each (origin, dest) pair as small tables."""
+    grouped = _group_offers_by_route(per_leg_offers, top_per_pair=5)
+    if not grouped:
+        return '<p style="color:#666;">(no priced offers available)</p>'
+
+    sections = []
+    for (origin, dest), offers in grouped:
+        rows = []
+        for o in offers:
+            airlines = _esc(_airlines_label(o.get("segments") or [],
+                                            o.get("airline") or ""))
+            flights = _esc(_flight_nos(o.get("segments") or [])) or "—"
+            stops_n = o.get("stops") or 0
+            stops_html = (
+                '<span style="color:#1a7f37;">nonstop</span>'
+                if stops_n == 0 else
+                f'{stops_n} stop{"" if stops_n == 1 else "s"}'
+            )
+            if o.get("layovers"):
+                stops_html += (f'<br><span style="color:#666;font-size:11px;">via '
+                               f'{_esc(", ".join(o["layovers"]))}</span>')
+            times = ""
+            if o.get("depart_time") or o.get("arrive_time"):
+                times = (f'{_esc(o.get("depart_time") or "?")} → '
+                         f'{_esc(o.get("arrive_time") or "?")}')
+            book = (
+                f'<a href="{_esc(o["booking_url"])}" '
+                f'style="{_CSS["btn"]};font-size:11px;padding:3px 8px;">Book</a>'
+                if o.get("booking_url") else ""
+            )
+            rows.append(
+                f'<tr>'
+                f'<td style="{_CSS["rank_td"]};">{_esc(o.get("date") or "")}</td>'
+                f'<td style="{_CSS["rank_td"]};">{airlines}</td>'
+                f'<td style="{_CSS["rank_td"]};font-size:11px;color:#666;">{flights}</td>'
+                f'<td style="{_CSS["rank_td"]};">{stops_html}</td>'
+                f'<td style="{_CSS["rank_td"]};font-size:11px;color:#666;">{times}</td>'
+                f'<td style="{_CSS["rank_td"]};">{_esc(o.get("duration_str") or "—")}</td>'
+                f'<td style="{_CSS["rank_td"]};text-align:right;font-weight:600;">'
+                f'${o["price_usd"]:,.0f}</td>'
+                f'<td style="{_CSS["rank_td"]};">{book}</td>'
+                f'</tr>'
+            )
+        sections.append(
+            f'<h3 style="font-size:14px;margin:14px 0 4px 0;">'
+            f'{_esc(origin)} → {_esc(dest)} '
+            f'<span style="font-weight:normal;color:#666;font-size:12px;">'
+            f'(top {len(offers)})</span></h3>'
+            f'<table style="{_CSS["rank_tbl"]}"><thead><tr>'
+            f'<th style="{_CSS["rank_th"]}">Date</th>'
+            f'<th style="{_CSS["rank_th"]}">Airline</th>'
+            f'<th style="{_CSS["rank_th"]}">Flight</th>'
+            f'<th style="{_CSS["rank_th"]}">Stops</th>'
+            f'<th style="{_CSS["rank_th"]}">Times</th>'
+            f'<th style="{_CSS["rank_th"]}">Duration</th>'
+            f'<th style="{_CSS["rank_th"]};text-align:right;">Price</th>'
+            f'<th style="{_CSS["rank_th"]}"></th>'
+            f'</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        )
+    return "".join(sections)
+
+
+def _format_per_leg_alternatives_text(per_leg_offers: dict) -> str:
+    """Plain-text version of the per-leg alternatives section."""
+    grouped = _group_offers_by_route(per_leg_offers, top_per_pair=5)
+    if not grouped:
+        return "  (no priced offers available)\n"
+
+    out = []
+    for (origin, dest), offers in grouped:
+        out.append(f"\n  ▸ {origin} → {dest}  (top {len(offers)})")
+        for i, o in enumerate(offers, 1):
+            stops_n = o.get("stops") or 0
+            stops_str = "nonstop" if stops_n == 0 else f"{stops_n} stop{'' if stops_n == 1 else 's'}"
+            airline_short = airline_name(o.get("airline") or "") or "?"
+            out.append(
+                f"    {i}. {o.get('date', '')} | {airline_short:<24}| "
+                f"{stops_str:<10} | {o.get('duration_str') or '—':<8} | "
+                f"${o['price_usd']:>7,.0f}"
+            )
+    return "\n".join(out) + "\n"
+
+
 def format_digest_html(
     ranked_combos: List[ScoredCombo],
     run_date: date,
     trip_config: dict,
     prev_day_data: Optional[dict] = None,
+    per_leg_offers: Optional[dict] = None,
 ) -> str:
     if not ranked_combos:
         return (
@@ -567,15 +716,30 @@ def format_digest_html(
     manual_html = _html_manual_award_check(ranked_combos, cpp)
     alerts_html = _html_award_alerts(ranked_combos)
 
+    # Per-leg alternatives section — only renders if main.py passed in the
+    # multi-offer dict (None when called from older code paths or tests).
+    per_leg_html = (
+        _section("🛫 Top alternatives per route (cheapest 5)",
+                 _html_per_leg_alternatives(per_leg_offers))
+        if per_leg_offers else ""
+    )
+
+    # Drop "Best Cash Combo" — it duplicates rank #1 in the Full Ranking,
+    # which is now at the top. Best Points is hidden when it's the same combo
+    # as the top of the cash ranking (no extra info).
+    points_section = ""
+    if top_points and (top_points is not ranked_combos[0]):
+        points_section = _section("🏆 Best Points Combo", points_html)
+
     return (
         f'<div style="{_CSS["body"]}"><div style="{_CSS["wrap"]}">'
         f'{header}'
-        f'{_section("🥇 Best Cash Combo", cash_html)}'
-        f'{_section("🏆 Best Points Combo", points_html)}'
+        f'{_section("Full Ranking", ranking_html)}'
+        f'{per_leg_html}'
         f'{_section("✈ Best Direct (no stopover)", direct_html)}'
         f'{_section("🎫 Best Single-Ticket (one PNR end to end)", through_html)}'
         f'{_section("🏝 Best Stopover Options", stopover_html)}'
-        f'{_section("Full Ranking", ranking_html)}'
+        f'{points_section}'
         f'{_section("Award Space Alerts", alerts_html)}'
         f'{_section("Manual Award Check", manual_html)}'
         f'</div></div>'

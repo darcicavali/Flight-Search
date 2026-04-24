@@ -32,7 +32,8 @@ from engine.constraints import (
 from engine.routes import Combo, deduplicate_legs, enumerate_routes
 from engine.scorer import all_legs_found, score_combo
 from fetchers.amadeus import merge_cash
-from fetchers.letsfg import fetch_cash_fares as fetch_letsfg
+from fetchers.common import empty_leg_result
+from fetchers.letsfg import fetch_cash_offers
 from fetchers.seats_aero import fetch_award_fares
 from fetchers.smiles import fetch_smiles_domestic
 from output.digest import format_digest, format_digest_html, send_email
@@ -114,11 +115,25 @@ async def build_trip_digest(trip_name: str, config: dict,
     log.info("[%s] Fetching fares for %d unique legs", trip_name, len(unique_legs))
 
     async with aiohttp.ClientSession() as session:
-        letsfg_data, award_data, domestic_award_data = await asyncio.gather(
-            fetch_letsfg(unique_legs, config, session=session),
+        offers_by_leg, award_data, domestic_award_data = await asyncio.gather(
+            fetch_cash_offers(unique_legs, config, session=session),
             fetch_award_fares(unique_legs, config, session=session),
             fetch_smiles_domestic(unique_legs, config, session=session),
         )
+
+    # Cheapest-per-leg view feeds the scorer (back-compat: same data shape as
+    # the old fetch_cash_fares). Full per-leg lists go to the digest renderer
+    # so it can show alternative options per route.
+    letsfg_data = {}
+    for leg in unique_legs:
+        offers = offers_by_leg.get(leg.key) or []
+        if offers:
+            letsfg_data[leg.key] = dict(offers[0])  # already sorted cheapest-first
+        else:
+            row = empty_leg_result(leg.origin, leg.destination, leg.date.isoformat())
+            row["source"] = "letsfg"
+            row["error"] = "no offers"
+            letsfg_data[leg.key] = row
 
     _log_fetcher_summary(f"{trip_name}:letsfg", letsfg_data)
     _log_fetcher_summary(f"{trip_name}:seats_aero", award_data, is_award=True)
@@ -154,8 +169,12 @@ async def build_trip_digest(trip_name: str, config: dict,
         trip_name, before_travel, before_conn, before_conn, len(scored),
     )
 
-    text = format_digest(scored, date.today(), config, prev_day_data=prev_day_data)
-    html = format_digest_html(scored, date.today(), config, prev_day_data=prev_day_data)
+    text = format_digest(scored, date.today(), config,
+                         prev_day_data=prev_day_data,
+                         per_leg_offers=offers_by_leg)
+    html = format_digest_html(scored, date.today(), config,
+                              prev_day_data=prev_day_data,
+                              per_leg_offers=offers_by_leg)
 
     return {
         "name": trip_name,
