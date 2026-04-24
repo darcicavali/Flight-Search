@@ -40,6 +40,24 @@ from typing import List
 
 import aiohttp
 
+# Expand LetsFG's curated fast-mode set with full-service carriers that are
+# API-only (no Playwright), so they load memory-safely on the free tier.
+# These cover long-haul routes missed by the default fast-mode curation
+# (ORD→Caribbean→GRU via LHR/AMS/CDG/LIS/FRA/MAD hubs, etc). Carriers like
+# AA/UA/DL/Copa/Avianca/LATAM direct need a browser and stay excluded.
+from letsfg.connectors.engine import _FAST_MODE_SOURCES as _LFG_FAST
+_LFG_FAST.update({
+    "aircanada_direct",
+    "airfrance_direct",
+    "klm_direct",
+    "britishairways_direct",
+    "lufthansa_direct",
+    "iberia_direct",
+    "tap_direct",
+    "austrian_direct",
+    "brusselsairlines_direct",
+})
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -270,6 +288,12 @@ RESULTS_HTML = """
     option in each leg is highlighted in green. Totals are intentionally omitted
     because your legs may be alternatives (e.g. ORD→FLN vs ORD→GRU→NVT) rather
     than a single trip.
+    <br><span style="font-size: .82rem;">
+    Note: American, United, Delta, Avianca direct, Copa direct, LATAM direct
+    require a browser scraper and are not available on this hosted instance.
+    If you see a fare on Google Flights that's missing here, it's likely from
+    one of those carriers. Run locally (<code>python -m tools.web</code>) to
+    include them.</span>
   </div>
 
   {% for leg in legs %}
