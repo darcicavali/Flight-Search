@@ -10,10 +10,12 @@ services:
     region: oregon
     branch: claude/flight-search-ranking-a8bt1
     buildCommand: pip install -r requirements.txt
-    # 1 worker keeps memory usage low (free tier = 512MB).
-    # 2 threads lets two requests be in-flight (rare for personal use).
-    # 180s timeout covers the slowest browser-fallback path.
-    startCommand: gunicorn tools.web:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 180 --access-logfile -
+    # 1 worker + 1 thread on free tier (512MB). A second in-flight request
+    # would double LetsFG's per-search memory and OOM. If you upgrade the
+    # plan later, bump --threads up to 2 for a snappier feel.
+    # 300s timeout covers 4–5 legs sequentially (up to ~1 min each) + the
+    # slowest browser-fallback path.
+    startCommand: gunicorn tools.web:app --bind 0.0.0.0:$PORT --workers 1 --threads 1 --timeout 300 --access-logfile -
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION

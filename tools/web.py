@@ -29,6 +29,7 @@ os.environ.setdefault("LETSFG_BROWSERS", "0")
 
 import argparse
 import asyncio
+import gc
 import logging
 import secrets
 import threading
@@ -428,21 +429,39 @@ async def _browser_fallback(legs: List[Leg], offers_by_leg: dict,
 async def _run_search(legs: List[Leg], include_award: bool) -> dict:
     """Fetch all cash offers per leg (+ optional award), with recovery.
 
+    Legs are processed one at a time, with a gc.collect() between them, so
+    peak memory stays flat at ~1 leg's worth of LetsFG state. This is
+    critical on the Render free tier (512MB RAM) — concurrent gather would
+    pile 3× that in memory and OOM on 4+ legs.
+
     Returns {'offers_by_leg': {key: [offer, ...]}, 'awards': {key: {...}},
              'source_notes': {key: 'retry'|'full mode'}}.
     """
+    # Force concurrency=1 inside the fetcher too, so internal gather only
+    # schedules one search at a time even if callers forget.
+    base_cfg = {"fetchers": {"letsfg": {"concurrency": 1}}}
     source_notes: dict = {}
+    offers_by_leg: dict = {}
+    award: dict = {}
+
     async with aiohttp.ClientSession() as session:
-        cash_task = fetch_cash_offers(legs, {}, session=session)
+        for leg in legs:
+            log.info("fetching leg %s", leg.key)
+            leg_offers = await fetch_cash_offers([leg], base_cfg, session=session)
+            offers_by_leg[leg.key] = leg_offers.get(leg.key) or []
+            gc.collect()  # release connector state before moving on
+
         if include_award:
-            award_task = fetch_award_fares(legs, {}, session=session)
-            offers_by_leg, award = await asyncio.gather(cash_task, award_task)
-        else:
-            offers_by_leg = await cash_task
-            award = {}
+            # seats.aero is much lighter per-leg (one REST call), but still
+            # serialize to keep the peak predictable.
+            for leg in legs:
+                res = await fetch_award_fares([leg], {}, session=session)
+                award[leg.key] = res.get(leg.key) or {}
+                gc.collect()
 
         await _retry_empty(legs, offers_by_leg, source_notes, session)
         await _browser_fallback(legs, offers_by_leg, source_notes, session)
+        gc.collect()
 
     return {
         "offers_by_leg": offers_by_leg,
