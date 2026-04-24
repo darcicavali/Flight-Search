@@ -245,30 +245,31 @@ RESULTS_HTML = """
             border-radius: 4px; padding: 1px 7px; margin-left: .3rem;
             font-size: .72rem; font-weight: 600; }
 
-    .totals { background: var(--bg); border-radius: 8px; padding: 1rem 1.25rem;
-              margin: 1.5rem 0; display: grid; grid-template-columns: 1fr 1fr 1fr;
-              gap: 1rem; }
-    .totals .label { color: #656d76; font-size: .85rem; }
-    .totals .value { font-size: 1.3rem; font-weight: 600; }
+    .summary { background: var(--bg); border-radius: 8px; padding: .85rem 1.1rem;
+               margin: 1rem 0 1.5rem; color: #656d76; font-size: .9rem; }
+    .summary strong { color: var(--ink); }
+
+    .filter-bar { padding: .55rem 1.1rem; background: white;
+                  border-bottom: 1px solid var(--bd); display: flex;
+                  flex-wrap: wrap; gap: .8rem 1.1rem; align-items: center;
+                  font-size: .85rem; color: #656d76; }
+    .filter-bar label { display: inline-flex; align-items: center; gap: .35rem; }
+    .filter-bar select { padding: .25rem .45rem; border: 1px solid var(--bd);
+                         border-radius: 5px; font: inherit; font-size: .85rem; }
+    .filter-bar .shown-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+    tr.hidden-by-filter { display: none; }
   </style>
 </head>
 <body>
   <a class="back" href="/">← New search</a>
   <h1>Results</h1>
 
-  <div class="totals">
-    <div>
-      <div class="label">Cheapest-combo total</div>
-      <div class="value">${{ "{:,.2f}".format(total_cash) }}</div>
-    </div>
-    <div>
-      <div class="label">Legs priced</div>
-      <div class="value">{{ priced_count }}/{{ total_count }}</div>
-    </div>
-    <div>
-      <div class="label">Total flight time</div>
-      <div class="value">{{ total_duration }}</div>
-    </div>
+  <div class="summary">
+    <strong>{{ priced_count }}/{{ total_count }} legs priced.</strong>
+    Each leg is searched independently — pick one row per leg. The cheapest
+    option in each leg is highlighted in green. Totals are intentionally omitted
+    because your legs may be alternatives (e.g. ORD→FLN vs ORD→GRU→NVT) rather
+    than a single trip.
   </div>
 
   {% for leg in legs %}
@@ -292,10 +293,37 @@ RESULTS_HTML = """
     {% endif %}
 
     {% if leg.offers %}
+      <div class="filter-bar" data-leg="{{ loop.index0 }}">
+        <label>Max stops:
+          <select data-filter="stops">
+            <option value="any">Any</option>
+            <option value="0">Nonstop</option>
+            <option value="1">≤ 1 stop</option>
+            <option value="2">≤ 2 stops</option>
+          </select>
+        </label>
+        <label>Max duration:
+          <select data-filter="duration">
+            <option value="any">Any</option>
+            <option value="12">Under 12h</option>
+            <option value="18">Under 18h</option>
+            <option value="24">Under 24h</option>
+            <option value="30">Under 30h</option>
+          </select>
+        </label>
+        <label>Sort by:
+          <select data-filter="sort">
+            <option value="price">Cheapest</option>
+            <option value="duration">Fastest</option>
+            <option value="stops">Fewest stops</option>
+          </select>
+        </label>
+        <span class="shown-count">{{ leg.offers|length }} shown</span>
+      </div>
       <table>
         <thead>
           <tr>
-            <th>Airline</th>
+            <th>Airlines</th>
             <th>Flight</th>
             <th>Stops</th>
             <th>Times</th>
@@ -306,8 +334,11 @@ RESULTS_HTML = """
         </thead>
         <tbody>
           {% for o in leg.offers %}
-          <tr {% if loop.first %}class="cheapest"{% endif %}>
-            <td>{{ o.airline_name or o.airline_code or '—' }}</td>
+          <tr data-stops="{{ o.stops }}"
+              data-duration="{{ o.duration_hours }}"
+              data-price="{{ o.price_usd }}"
+              data-airlines="{{ o.airline_codes }}">
+            <td>{{ o.airlines_display }}</td>
             <td>{{ o.flight_nos or '—' }}</td>
             <td>
               {% if o.stops == 0 %}<span class="nonstop">nonstop</span>
@@ -331,6 +362,64 @@ RESULTS_HTML = """
     {% endif %}
   </div>
   {% endfor %}
+
+  <script>
+    // Per-leg client-side filters: stops, duration, sort.
+    document.querySelectorAll('.filter-bar').forEach(bar => {
+      const leg = bar.closest('.leg');
+      const tbody = leg.querySelector('tbody');
+      if (!tbody) return;
+      const allRows = Array.from(tbody.querySelectorAll('tr'));
+      const countEl = bar.querySelector('.shown-count');
+
+      function parseFloatOrInf(v) { const n = parseFloat(v); return isNaN(n) ? Infinity : n; }
+
+      function apply() {
+        const maxStops = bar.querySelector('[data-filter="stops"]').value;
+        const maxDuration = bar.querySelector('[data-filter="duration"]').value;
+        const sortBy = bar.querySelector('[data-filter="sort"]').value;
+
+        // Filter
+        let visible = 0;
+        allRows.forEach(row => {
+          const stops = parseInt(row.dataset.stops, 10);
+          const duration = parseFloat(row.dataset.duration);
+          const passStops = maxStops === 'any' || stops <= parseInt(maxStops, 10);
+          const passDur = maxDuration === 'any' || duration <= parseFloat(maxDuration);
+          if (passStops && passDur) {
+            row.classList.remove('hidden-by-filter');
+            visible++;
+          } else {
+            row.classList.add('hidden-by-filter');
+          }
+        });
+
+        // Sort (re-append in new order)
+        const sortKey = sortBy === 'price' ? 'price'
+                       : sortBy === 'duration' ? 'duration'
+                       : 'stops';
+        const sorted = allRows.slice().sort((a, b) => {
+          const av = parseFloatOrInf(a.dataset[sortKey]);
+          const bv = parseFloatOrInf(b.dataset[sortKey]);
+          if (av !== bv) return av - bv;
+          // Stable tiebreak: price, then duration
+          return parseFloatOrInf(a.dataset.price) - parseFloatOrInf(b.dataset.price);
+        });
+        sorted.forEach(r => tbody.appendChild(r));
+
+        // Highlight the first visible row as the "cheapest" pick
+        allRows.forEach(r => r.classList.remove('cheapest'));
+        const firstVisible = sorted.find(r => !r.classList.contains('hidden-by-filter'));
+        if (firstVisible) firstVisible.classList.add('cheapest');
+
+        countEl.textContent = visible === allRows.length
+          ? `${visible} shown`
+          : `${visible} of ${allRows.length} shown`;
+      }
+
+      bar.querySelectorAll('select').forEach(sel => sel.addEventListener('change', apply));
+    });
+  </script>
 
   <a class="back" href="/">← New search</a>
 </body>
@@ -356,6 +445,24 @@ def _segments_summary(segments: list) -> str:
         else:
             out.append(f"{carrier}{fn}")
     return " · ".join(out)
+
+
+def _airlines_involved(segments: list, owner: str = "") -> List[str]:
+    """All distinct marketing carriers on the itinerary, in segment order.
+
+    The 'owner' (ticketing airline) goes first if it's in the set, so the row
+    reads as 'who sold it' → operating carriers. Duplicates removed while
+    preserving order.
+    """
+    seen: List[str] = []
+    for code in ([owner] if owner else []):
+        if code and code not in seen:
+            seen.append(code)
+    for s in (segments or []):
+        code = (s.get("carrier") or "").strip()
+        if code and code not in seen:
+            seen.append(code)
+    return seen
 
 
 def _format_duration_total(hours_sum: float) -> str:
@@ -437,9 +544,16 @@ async def _run_search(legs: List[Leg], include_award: bool) -> dict:
     Returns {'offers_by_leg': {key: [offer, ...]}, 'awards': {key: {...}},
              'source_notes': {key: 'retry'|'full mode'}}.
     """
-    # Force concurrency=1 inside the fetcher too, so internal gather only
-    # schedules one search at a time even if callers forget.
-    base_cfg = {"fetchers": {"letsfg": {"concurrency": 1}}}
+    # mode=None uses all ~88 non-browser connectors (not just fast-mode's 25),
+    # which brings in Air Canada, Delta, Copa, LATAM direct etc. Counter-
+    # intuitively this is often faster than fast mode because the expanded
+    # connector pool has less contention in the engine's scheduler.
+    # limit=50 is LetsFG's default; enough for long-haul routes where Copa/
+    # AC/premium carriers would otherwise get truncated after the cheapest
+    # 20-25 OTA offers.
+    base_cfg = {"fetchers": {"letsfg": {
+        "concurrency": 1, "mode": None, "limit": 50,
+    }}}
     source_notes: dict = {}
     offers_by_leg: dict = {}
     award: dict = {}
@@ -504,23 +618,25 @@ def search():
     source_notes = results["source_notes"]
 
     leg_rows = []
-    total_cash = 0.0
-    total_hours = 0.0
     priced = 0
     for leg in legs:
         offers = offers_by_leg.get(leg.key) or []
-        shaped = [{
-            "airline_name": airline_name(o.get("airline") or ""),
-            "airline_code": o.get("airline") or "",
-            "duration_str": o.get("duration_str"),
-            "depart_time": o.get("depart_time"),
-            "arrive_time": o.get("arrive_time"),
-            "layovers": o.get("layovers") or [],
-            "flight_nos": _segments_summary(o.get("segments") or []),
-            "booking_url": o.get("booking_url"),
-            "price_usd": o.get("price_usd"),
-            "stops": o.get("stops") or 0,
-        } for o in offers]
+        shaped = []
+        for o in offers:
+            carriers = _airlines_involved(o.get("segments") or [], o.get("airline") or "")
+            shaped.append({
+                "airlines_display": " + ".join(airline_name(c) for c in carriers) or "—",
+                "airline_codes": " ".join(carriers),  # for filter data attr
+                "duration_str": o.get("duration_str"),
+                "duration_hours": o.get("duration_hours") or 0,
+                "depart_time": o.get("depart_time"),
+                "arrive_time": o.get("arrive_time"),
+                "layovers": o.get("layovers") or [],
+                "flight_nos": _segments_summary(o.get("segments") or []),
+                "booking_url": o.get("booking_url"),
+                "price_usd": o.get("price_usd"),
+                "stops": o.get("stops") or 0,
+            })
 
         cheapest = shaped[0] if shaped else None
         leg_rows.append({
@@ -534,16 +650,11 @@ def search():
             "offer_count": len(shaped),
         })
         if cheapest:
-            total_cash += cheapest["price_usd"]
             priced += 1
-            if offers[0].get("duration_hours"):
-                total_hours += offers[0]["duration_hours"]
 
     return render_template_string(
         RESULTS_HTML,
         legs=leg_rows,
-        total_cash=total_cash,
-        total_duration=_format_duration_total(total_hours),
         priced_count=priced,
         total_count=len(legs),
     )
