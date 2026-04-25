@@ -31,15 +31,27 @@ except ImportError:
 # BOG, LATAM via SCL/GRU, and the US legacy carriers' NDC inventory. On
 # environments without Chrome (Render free tier) letsfg's engine silently
 # filters them out, so adding them here is safe everywhere.
-from letsfg.connectors.engine import _FAST_MODE_SOURCES as _LFG_FAST
-_LFG_FAST.update({
+from letsfg.connectors.engine import (
+    _BROWSER_SOURCES,
+    _FAST_MODE_SOURCES as _LFG_FAST,
+    _TEMPORARILY_DISABLED,
+)
+_KEEP_BROWSER_CONNECTORS = {
     "copa_direct",
     "avianca_direct",
     "latam_direct",
     "american_direct",
     "united_direct",
     "delta_direct",
-})
+}
+_LFG_FAST.update(_KEEP_BROWSER_CONNECTORS)
+
+# Restrict the browser-scraper pool to the curated set above. Without this,
+# fast mode's other ~10 browser-based OTAs (Despegar, eSky, IXIGO, etc.)
+# also queue for browser slots, blowing each leg out from ~10s to several
+# minutes. Disabling them here means only our 6 target carriers consume
+# browser time. No effect when LETSFG_BROWSERS=0 (browsers off entirely).
+_TEMPORARILY_DISABLED.update(_BROWSER_SOURCES - _KEEP_BROWSER_CONNECTORS)
 
 from engine.constraints import (
     apply_constraints,
@@ -121,6 +133,19 @@ async def build_trip_digest(trip_name: str, config: dict,
     caller so multi-trip runs produce a single combined email.
     """
     log.info("Running flight search for: %s", trip_name)
+
+    # When browsers are enabled (daily cron on GH Actions), real Chrome scrapes
+    # take 60-120s per leg, so we need a longer per-leg timeout and more
+    # browser slots than the API-only defaults. Web UI on Render keeps
+    # LETSFG_BROWSERS=0 and these overrides don't apply.
+    if os.environ.get("LETSFG_BROWSERS", "").strip() == "1":
+        config = dict(config)  # don't mutate caller's dict
+        fetchers_cfg = dict(config.get("fetchers") or {})
+        letsfg_cfg = dict(fetchers_cfg.get("letsfg") or {})
+        letsfg_cfg.setdefault("max_browsers", 4)
+        letsfg_cfg.setdefault("timeout_sec", 120)
+        fetchers_cfg["letsfg"] = letsfg_cfg
+        config["fetchers"] = fetchers_cfg
 
     combos = enumerate_routes(config)
     log.info("[%s] Generated %d route combinations", trip_name, len(combos))
