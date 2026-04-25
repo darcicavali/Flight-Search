@@ -9097,5 +9097,19 @@
         "rank": 1
       }
     ]
+  },
+  {
+    "date": "2026-04-25",
+    "combos": [
+      {
+        "combo_id": "ORD-FLN-2026-07-16",
+        "route": "ORD \u2192 FLN",
+        "total_cash_usd": 469.0,
+        "best_points_option": null,
+        "total_travel_hours": 29.25,
+        "verdict": "CASH WINS",
+        "rank": 1
+      }
+    ]
   }
 ]
