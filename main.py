@@ -53,6 +53,44 @@ _LFG_FAST.update(_KEEP_BROWSER_CONNECTORS)
 # browser time. No effect when LETSFG_BROWSERS=0 (browsers off entirely).
 _TEMPORARILY_DISABLED.update(_BROWSER_SOURCES - _KEEP_BROWSER_CONNECTORS)
 
+
+# Workaround for a bug in letsfg's Copa connector (CopaConnectorClient).
+# Its _search_ow tries the fast Sputnik HTTP API first, then date-filters
+# the results, then unconditionally reads sputnik_offers[0].currency — which
+# crashes with IndexError when the date filter empties the list (Sputnik
+# returns offers for some dates but not the requested one). The crash was
+# observed in CI: "CM Sputnik GRU→NVT: 10 offers" → "copa_direct crashed:
+# IndexError: list index out of range".
+# Fix: pre-filter Sputnik results inside _try_sputnik. If nothing matches
+# the requested date, return [] so the upstream `if sputnik_offers:` check
+# correctly falls through to the slow Chrome path (which handles empty
+# correctly via _empty()). Reported upstream; this can be removed once
+# letsfg ships a fix.
+def _patch_copa_connector():
+    from datetime import datetime
+    from letsfg.connectors import copa as _copa_mod
+
+    _orig_try_sputnik = _copa_mod.CopaConnectorClient._try_sputnik
+
+    async def _patched_try_sputnik(self, req):
+        offers = await _orig_try_sputnik(self, req)
+        if not offers:
+            return offers
+        target_date = (
+            req.date_from.date() if isinstance(req.date_from, datetime)
+            else req.date_from
+        )
+        return [
+            o for o in offers
+            if o.outbound and o.outbound.segments
+            and o.outbound.segments[0].departure.date() == target_date
+        ]
+
+    _copa_mod.CopaConnectorClient._try_sputnik = _patched_try_sputnik
+
+
+_patch_copa_connector()
+
 from engine.constraints import (
     apply_constraints,
     prune_impossible_after_fetch,
