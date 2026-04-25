@@ -9111,5 +9111,28 @@
         "rank": 1
       }
     ]
+  },
+  {
+    "date": "2026-04-25",
+    "combos": [
+      {
+        "combo_id": "ORD-FLN-2026-07-16",
+        "route": "ORD \u2192 FLN",
+        "total_cash_usd": 464.6,
+        "best_points_option": null,
+        "total_travel_hours": 13.48,
+        "verdict": "CASH WINS",
+        "rank": 1
+      },
+      {
+        "combo_id": "ORD-GRU-2026-07-16|GRU-NVT-2026-07-18",
+        "route": "ORD \u2192 GRU \u2192 NVT",
+        "total_cash_usd": 684.6,
+        "best_points_option": null,
+        "total_travel_hours": 14.15,
+        "verdict": "CASH WINS",
+        "rank": 2
+      }
+    ]
   }
 ]
