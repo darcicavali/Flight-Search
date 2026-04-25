@@ -13,3 +13,8 @@ pytest==8.3.2
 pytest-asyncio==0.23.8
 flask==3.0.3
 gunicorn==23.0.0
+# Stealth Playwright fork required by letsfg's TravelUp connector — without
+# it, "TravelUp attempt 0 failed: No module named 'patchright'" on every leg.
+# patchright auto-handles Cloudflare Turnstile, which other browser scrapers
+# can't bypass.
+patchright==1.58.2

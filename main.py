@@ -44,7 +44,23 @@ _KEEP_BROWSER_CONNECTORS = {
     "united_direct",
     "delta_direct",
 }
+# API-only full-service carriers — no browser required, not subject to
+# anti-bot blocking the same way browser scrapers are. Add to fast mode so
+# they run alongside Kiwi/Travelstart and contribute their own NDC fares
+# (which sometimes differ from what aggregators see via GDS).
+_API_ONLY_FULL_SERVICE = {
+    "aircanada_direct",
+    "airfrance_direct",
+    "klm_direct",
+    "britishairways_direct",
+    "lufthansa_direct",
+    "iberia_direct",
+    "tap_direct",
+    "austrian_direct",
+    "brusselsairlines_direct",
+}
 _LFG_FAST.update(_KEEP_BROWSER_CONNECTORS)
+_LFG_FAST.update(_API_ONLY_FULL_SERVICE)
 
 # Restrict the browser-scraper pool to the curated set above. Without this,
 # fast mode's other ~10 browser-based OTAs (Despegar, eSky, IXIGO, etc.)
@@ -90,6 +106,20 @@ def _patch_copa_connector():
 
 
 _patch_copa_connector()
+
+
+# Workaround for letsfg's Etraveli/Gotogate connector — its _do_search
+# calls get_httpx_proxy_url() but never imports it from .browser, so every
+# attempt fails with NameError ("name 'get_httpx_proxy_url' is not defined").
+# Workflow logs show this happening on every leg. Inject the function into
+# the etraveli module namespace at import time. Reported upstream.
+def _patch_etraveli_connector():
+    from letsfg.connectors import etraveli as _etr_mod
+    from letsfg.connectors.browser import get_httpx_proxy_url
+    _etr_mod.get_httpx_proxy_url = get_httpx_proxy_url
+
+
+_patch_etraveli_connector()
 
 from engine.constraints import (
     apply_constraints,
