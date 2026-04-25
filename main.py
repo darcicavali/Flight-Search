@@ -24,6 +24,23 @@ try:
 except ImportError:
     pass
 
+# Expand LetsFG's fast-mode connector set with full-service carriers that
+# require a browser scraper (Playwright + headed Chrome). When the runner has
+# Chrome and LETSFG_BROWSERS=1 (set in the GitHub Actions workflow), these run
+# and surface fares Kiwi often misses — especially Copa via PTY, Avianca via
+# BOG, LATAM via SCL/GRU, and the US legacy carriers' NDC inventory. On
+# environments without Chrome (Render free tier) letsfg's engine silently
+# filters them out, so adding them here is safe everywhere.
+from letsfg.connectors.engine import _FAST_MODE_SOURCES as _LFG_FAST
+_LFG_FAST.update({
+    "copa_direct",
+    "avianca_direct",
+    "latam_direct",
+    "american_direct",
+    "united_direct",
+    "delta_direct",
+})
+
 from engine.constraints import (
     apply_constraints,
     prune_impossible_after_fetch,

@@ -38,13 +38,18 @@ jobs:
       - name: Install Playwright browsers (required by LetsFG)
         run: python -m playwright install --with-deps chromium
 
+      - name: Install Xvfb (for headed Chrome in browser-based connectors)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Run flight search
         env:
-          # Skip LetsFG's browser-based connectors — they take 20–60s each on
-          # GH runners (headed Chrome, slow renders, bot checks) and rarely
-          # add unique offers. API-only connectors (Kiwi aggregator + direct
-          # airline APIs) give us full coverage in seconds per leg.
-          LETSFG_BROWSERS: "0"
+          # Enable LetsFG's browser-based connectors. GitHub Actions runners
+          # ship with Chrome at /opt/google/chrome and 7GB RAM, so we can
+          # afford the slower scrapes (~30–60s per leg) in exchange for Copa
+          # (via PTY), Avianca (via BOG), LATAM, and the US legacy carriers'
+          # NDC inventory — fares Kiwi alone misses. xvfb-run gives the headed
+          # Chrome a virtual display.
+          LETSFG_BROWSERS: "1"
           SEATS_AERO_API_KEY: ${{ secrets.SEATS_AERO_API_KEY }}
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
@@ -53,12 +58,13 @@ jobs:
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
         # Scheduled runs and dispatch-with-"all" both run every enabled trip.
         # Dispatch with a specific trip name runs just that one.
+        timeout-minutes: 90
         run: |
           TRIP="${{ github.event.inputs.trip }}"
           if [ -z "$TRIP" ] || [ "$TRIP" = "all" ]; then
-            python main.py
+            xvfb-run --auto-servernum python main.py
           else
-            python main.py --trip "$TRIP"
+            xvfb-run --auto-servernum python main.py --trip "$TRIP"
           fi
 
       - name: Commit price history snapshot
