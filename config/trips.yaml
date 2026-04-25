@@ -53,32 +53,38 @@ trips:
       send_time: "07:00"
       only_if_change: false
 
-  # Shrunk variant for CI smoke testing: 1 depart date, 2 stopover cities,
-  # 1 domestic dest → ~25–30 unique legs. Finishes in ~1–2 min so we can
-  # verify the pipeline end-to-end before dispatching the full trip.
+  # Targeted smoke trip — exercises the 5 most representative legs of the
+  # real trip with the smallest enumeration possible. Used to verify that
+  # browser-based scrapers (Copa, Avianca, LATAM, AA, UA, DL) actually
+  # surface fares before committing to the full ~50 min daily run.
+  #
+  # Config below produces these 9 unique legs (5 user-requested + 4 the
+  # route enumerator unavoidably adds from the same shape):
+  #   ORD→AUA, AUA→FLN, ORD→FLN, ORD→GRU, GRU→NVT  ← user's targets
+  #   GRU→FLN, AUA→GRU, ORD→NVT, AUA→NVT           ← from same combos
   chicago_sao_paulo_smoke:
-    name: "SMOKE — Chicago → São Paulo (1 date)"
-    enabled: false   # manual dispatch only — not included in daily email
+    name: "SMOKE — ORD↔Brazil via AUA (1 date)"
+    enabled: false   # manual dispatch only — not in daily email
     origin: "ORD"
     final_destination: "GRU"
-    brazil_gateways: ["GRU", "GIG"]
+    brazil_gateways: ["GRU"]            # drop GIG — keep enumeration small
 
     stopovers:
-      candidates: ["ADZ", "CTG"]
+      candidates: ["AUA"]               # one Caribbean stopover
       min_days: 2
-      max_days: 3
+      max_days: 2                       # one stop_days option
 
     through_tickets:
-      enabled: true
+      enabled: true                     # gives us ORD→FLN and AUA→FLN
 
     domestic_leg:
       origin: "GRU"
-      destinations: ["NVT"]
+      destinations: ["FLN", "NVT"]      # both Brazil targets
       airlines: ["LATAM", "GOL", "AZUL"]
 
     travel_window:
       earliest_depart: "2026-07-26"
-      latest_depart: "2026-07-26"
+      latest_depart: "2026-07-26"       # single date keeps it minimal
       return_by: "2026-08-10"
 
     points_balances:
