@@ -71,8 +71,8 @@ trips:
 
     stopovers:
       candidates: ["AUA"]               # one Caribbean stopover
-      min_days: 2
-      max_days: 2                       # one stop_days option
+      min_days: 3                       # ORD→AUA Jul 16, AUA→GRU/FLN Jul 19
+      max_days: 3                       # one stop_days option
 
     through_tickets:
       enabled: true                     # gives us ORD→FLN and AUA→FLN
@@ -83,8 +83,8 @@ trips:
       airlines: ["LATAM", "GOL", "AZUL"]
 
     travel_window:
-      earliest_depart: "2026-07-26"
-      latest_depart: "2026-07-26"       # single date keeps it minimal
+      earliest_depart: "2026-07-16"     # all ORD-departures on Jul 16
+      latest_depart: "2026-07-16"       # single date, matches Google Flights
       return_by: "2026-08-10"
 
     points_balances:
