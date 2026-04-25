@@ -9083,5 +9083,19 @@
         "rank": 1
       }
     ]
+  },
+  {
+    "date": "2026-04-25",
+    "combos": [
+      {
+        "combo_id": "ORD-NVT-2026-07-26",
+        "route": "ORD \u2192 NVT",
+        "total_cash_usd": 568.04,
+        "best_points_option": null,
+        "total_travel_hours": 33.33,
+        "verdict": "CASH WINS",
+        "rank": 1
+      }
+    ]
   }
 ]
