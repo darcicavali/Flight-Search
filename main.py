@@ -131,7 +131,12 @@ from engine.scorer import all_legs_found, score_combo
 from fetchers.amadeus import merge_cash
 from fetchers.common import empty_leg_result
 from fetchers.letsfg import fetch_cash_offers
-from fetchers.seats_aero import fetch_award_fares
+# seats.aero removed from the daily cron — its API requires a paid Partner
+# subscription ($30+/mo) and the user's not paying for it. The Manual Award
+# Check section of the digest still gives per-route deep-links to Aeroplan,
+# LifeMiles, United, Flying Blue, Smiles, LATAM Pass, etc. Re-enable by
+# importing fetch_award_fares from fetchers.seats_aero and adding back the
+# call below.
 from fetchers.smiles import fetch_smiles_domestic
 from output.digest import format_digest, format_digest_html, send_email
 from output.sheets import append_to_sheets, load_previous_day
@@ -225,11 +230,15 @@ async def build_trip_digest(trip_name: str, config: dict,
     log.info("[%s] Fetching fares for %d unique legs", trip_name, len(unique_legs))
 
     async with aiohttp.ClientSession() as session:
-        offers_by_leg, award_data, domestic_award_data = await asyncio.gather(
+        offers_by_leg, domestic_award_data = await asyncio.gather(
             fetch_cash_offers(unique_legs, config, session=session),
-            fetch_award_fares(unique_legs, config, session=session),
             fetch_smiles_domestic(unique_legs, config, session=session),
         )
+        # Award data slot kept for back-compat with _assemble_legs (which
+        # merges intl + domestic awards). Empty dict = no automated intl
+        # award alerts; the Manual Award Check section in the email still
+        # generates per-route booking-search URLs.
+        award_data = {}
 
     # Cheapest-per-leg view feeds the scorer (back-compat: same data shape as
     # the old fetch_cash_fares). Full per-leg lists go to the digest renderer
@@ -246,7 +255,6 @@ async def build_trip_digest(trip_name: str, config: dict,
             letsfg_data[leg.key] = row
 
     _log_fetcher_summary(f"{trip_name}:letsfg", letsfg_data)
-    _log_fetcher_summary(f"{trip_name}:seats_aero", award_data, is_award=True)
     _log_fetcher_summary(f"{trip_name}:smiles", domestic_award_data, is_award=True)
 
     cash_data = merge_cash(letsfg_data)
