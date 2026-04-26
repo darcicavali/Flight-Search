@@ -23,4 +23,5 @@ Thumbs.db
 
 # Local caches / runtime data
 data/cache/
+data/price_history.json
 *.log

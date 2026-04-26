@@ -1,95 +1,47 @@
 trips:
-  chicago_sao_paulo_jul2026:
-    name: "Chicago → São Paulo July 2026"
-    enabled: true
+
+  # ============================================================================
+  # WHERE YOUR REAL TRIPS LIVE
+  # ============================================================================
+  # The trips defined in this file are public — anyone with access to the repo
+  # can read them. Keep your *actual* trip dates, destinations, and points
+  # balances out of this file by putting them in the **TRIPS_CONFIG** GitHub
+  # Secret instead. main.py merges secret trips on top of file trips at
+  # runtime, with the secret taking precedence.
+  #
+  # See docs/ADDING_A_TRIP.md for the full guide.
+  # ============================================================================
+
+  # Smoke-test trip — generic example, runs ~10 min when dispatched manually.
+  # Not included in the daily email (enabled: false). Safe to leave public.
+  chicago_sao_paulo_smoke:
+    name: "SMOKE — sample trip (1 date, 1 stopover)"
+    enabled: false
     origin: "ORD"
     final_destination: "GRU"
-    brazil_gateways: ["GRU", "GIG"]
+    brazil_gateways: ["GRU"]
 
     stopovers:
-      candidates: ["ADZ", "CTG", "AUA"]
-      min_days: 2
-      max_days: 4
+      candidates: ["AUA"]
+      min_days: 3
+      max_days: 3
 
     through_tickets:
       enabled: true
 
     domestic_leg:
       origin: "GRU"
-      destinations: ["NVT", "JOI", "FLN"]
+      destinations: ["FLN", "NVT"]
       airlines: ["LATAM", "GOL", "AZUL"]
 
     travel_window:
-      earliest_depart: "2026-07-26"
-      latest_depart: "2026-08-02"
+      earliest_depart: "2026-07-16"
+      latest_depart: "2026-07-16"
       return_by: "2026-08-10"
 
     points_balances:
-      amex_mr: 180000
-      lifemiles: 45000
-      c6_atomos: 0
-
-    cpp_valuations:
-      lifemiles: 1.4
-      aeroplan: 1.8
-      united_mp: 1.2
-      flying_blue: 1.5
-      smiles: 1.3
-      latam_pass: 1.2
-      tudoazul: 1.1
-
-    scoring_weights:
-      total_cost: 0.5
-      total_time: 0.3
-      connection_quality: 0.2
-
-    constraints:
-      gru_min_connection_hours: 3
-      max_total_travel_hours: 36
-      baggage_checked_bags: 1
-
-    notify:
-      email: ""
-      send_time: "07:00"
-      only_if_change: false
-
-  # Targeted smoke trip — exercises the 5 most representative legs of the
-  # real trip with the smallest enumeration possible. Used to verify that
-  # browser-based scrapers (Copa, Avianca, LATAM, AA, UA, DL) actually
-  # surface fares before committing to the full ~50 min daily run.
-  #
-  # Config below produces these 9 unique legs (5 user-requested + 4 the
-  # route enumerator unavoidably adds from the same shape):
-  #   ORD→AUA, AUA→FLN, ORD→FLN, ORD→GRU, GRU→NVT  ← user's targets
-  #   GRU→FLN, AUA→GRU, ORD→NVT, AUA→NVT           ← from same combos
-  chicago_sao_paulo_smoke:
-    name: "SMOKE — ORD↔Brazil via AUA (1 date)"
-    enabled: false   # manual dispatch only — not in daily email
-    origin: "ORD"
-    final_destination: "GRU"
-    brazil_gateways: ["GRU"]            # drop GIG — keep enumeration small
-
-    stopovers:
-      candidates: ["AUA"]               # one Caribbean stopover
-      min_days: 3                       # ORD→AUA Jul 16, AUA→GRU/FLN Jul 19
-      max_days: 3                       # one stop_days option
-
-    through_tickets:
-      enabled: true                     # gives us ORD→FLN and AUA→FLN
-
-    domestic_leg:
-      origin: "GRU"
-      destinations: ["FLN", "NVT"]      # both Brazil targets
-      airlines: ["LATAM", "GOL", "AZUL"]
-
-    travel_window:
-      earliest_depart: "2026-07-16"     # all ORD-departures on Jul 16
-      latest_depart: "2026-07-16"       # single date, matches Google Flights
-      return_by: "2026-08-10"
-
-    points_balances:
-      amex_mr: 180000
-      lifemiles: 45000
+      amex_mr: 0
+      lifemiles: 0
       c6_atomos: 0
 
     cpp_valuations:

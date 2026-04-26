@@ -389,20 +389,51 @@ async def run_all(trips: List[tuple], dry_run: bool) -> int:
     return 0
 
 
+def _load_all_trips(config_path: str) -> dict:
+    """Load trips from the YAML file, then merge in any private trips from the
+    TRIPS_CONFIG env var (a YAML string, typically a GitHub Secret).
+
+    Trips defined in TRIPS_CONFIG override file-level trips with the same key.
+    The file is intended to hold non-sensitive examples (sample/smoke trips);
+    the secret holds the user's actual personal trip data so the repo can
+    safely be public.
+    """
+    with open(config_path) as f:
+        all_cfg = yaml.safe_load(f) or {}
+    all_cfg.setdefault("trips", {})
+
+    secret_yaml = (os.environ.get("TRIPS_CONFIG") or "").strip()
+    if not secret_yaml:
+        return all_cfg
+
+    try:
+        secret_cfg = yaml.safe_load(secret_yaml) or {}
+    except yaml.YAMLError as e:
+        log.error("TRIPS_CONFIG secret isn't valid YAML — ignoring it. "
+                  "Parser error: %s", e)
+        return all_cfg
+
+    secret_trips = (secret_cfg or {}).get("trips") or {}
+    if secret_trips:
+        log.info("TRIPS_CONFIG secret merged %d trip(s): %s",
+                 len(secret_trips), list(secret_trips.keys()))
+        all_cfg["trips"].update(secret_trips)
+    return all_cfg
+
+
 def main():
     parser = argparse.ArgumentParser(description="Flight digest runner")
     parser.add_argument(
         "--trip",
-        help="Run just one trip (key in config/trips.yaml). "
-        "Omit to run every enabled trip.",
+        help="Run just one trip (key in config/trips.yaml or TRIPS_CONFIG "
+        "secret). Omit to run every enabled trip.",
     )
     parser.add_argument("--dry-run", action="store_true",
                         help="print digest instead of sending email")
     parser.add_argument("--config", default="config/trips.yaml")
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        all_cfg = yaml.safe_load(f)
+    all_cfg = _load_all_trips(args.config)
 
     try:
         trips = _select_trips(all_cfg, args.trip)
@@ -411,8 +442,9 @@ def main():
         sys.exit(1)
 
     if not trips:
-        log.error("No enabled trips to run. Add 'enabled: true' to at least one "
-                  "trip in %s, or pass --trip explicitly.", args.config)
+        log.error("No enabled trips to run. Add 'enabled: true' to at least "
+                  "one trip in %s or in the TRIPS_CONFIG secret, or pass "
+                  "--trip explicitly.", args.config)
         sys.exit(1)
 
     log.info("Will run %d trip(s): %s", len(trips), [t[0] for t in trips])
