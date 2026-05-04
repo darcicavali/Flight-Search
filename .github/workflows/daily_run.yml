@@ -1,8 +1,10 @@
 name: Daily Flight Digest
 
 on:
-  schedule:
-    - cron: '0 13 * * *'   # 13:00 UTC ≈ 07:00 CT (adjust for DST twice a year)
+  # Scheduled runs paused — user is reviewing/reconfiguring legs.
+  # Re-enable by uncommenting the two lines below.
+  # schedule:
+  #   - cron: '0 13 * * *'   # 13:00 UTC ≈ 07:00 CT (adjust for DST twice a year)
   workflow_dispatch:
     inputs:
       trip:
